@@ -1,0 +1,920 @@
+---
+title: "RQ1.2 Democratic Candidate Choice Models"
+description: "How do feelings about the future affect young people's democratic candidate choices?" 
+
+format:
+  html:
+    theme: paper
+    shift-heading-level-by: 1
+    code-tools: true
+    code-fold: true
+    toc: true
+    toc-fold: false
+    toc-location: right
+    toc-depth: 4
+    toc-title: "Contents"
+
+# Portability settings
+embed-resources: true
+
+# Execution options 
+execute:
+  warning: false
+---
+
+```{r}
+#| include: false
+# set error messages to English
+Sys.setenv(LANG = "en")
+
+knitr::opts_chunk$set(
+  fig.align = "center", 
+  fig.retina = 3,
+  fig.width = 6, 
+  fig.height = (6 * 0.618),
+  out.width = "90%", 
+  collapse = FALSE
+)
+
+options(
+  digits = 4,
+  width = 300,
+  dplyr.summarise.inform = FALSE)
+```
+
+```{r}
+#| include: false
+#| warning: true
+#| message: true
+if (!require("groundhog", quietly = TRUE)) {
+  install.packages("groundhog")
+}
+library("groundhog")
+
+# use groundhog to install and load packages
+pkgs <- c("here",         # System path management
+          "tidyverse",    # ggplot, dplyr, and friends
+          "datawizard",   # Data preparation tools
+          "brms",         # Bayesian regression modelling in Stan
+          "cregg",        # Frequentist conjoint analysis
+          "marginaleffects", # Model-based predictions, comparisons, and more marginalia
+          "tidybayes",    # Tools to work with Bayesian models 
+          "tinytable",    # Minimalist tables
+          "modelsummary", # Data and model summaries with tables and plots
+          "ggdist",       # Additional plot elements
+          # "ggrain",       # For fancy raincloud plots
+          # "GGally",       # ggpairs and other ggplot2 friends
+          # "ggsignif",     # Add significance to figures
+          "ggforce",         # extension to ggplot
+          "patchwork",    # Combine multiple ggplots
+          "showtext"      # Additional fonts for plots etc
+          )
+
+groundhog.library(pkgs, "2026-01-01")
+```
+
+```{r}
+#| include: false
+# I use the faster cmdstanr backend for Stan in the place of rstan
+# to do so install the cmdstanr package first: https://mc-stan.org/cmdstanr/
+# Then run cmdstanr::install_cmdstan() to install cmdstan on your computer.
+# RTools must be installed. For more info see 
+# https://mc-stan.org/cmdstanr/articles/cmdstanr.html#introduction
+
+# install.packages("cmdstanr", repos = c('https://stan-dev.r-universe.dev', getOption("repos")))
+# cmdstanr::install_cmdstan()
+
+options(mc.cores = 4,  
+        brms.backend = "cmdstanr")
+```
+
+```{r}
+#| include: false
+
+showtext_auto()
+showtext_opts(dpi = 600)
+
+font_add_google("Public Sans", "Public Sans")
+font_add_google("Public Sans", "Public Sans Light", regular.wt = 300)
+font_add_google("Public Sans", "Public Sans Semibold", regular.wt = 600)
+
+# Custom ggplot theme
+theme_nice <- function() {
+  # General text family and base size
+  theme_minimal(base_family = "Public Sans", base_size = 14) +
+    theme(
+      # Remove minor grid lines for cleaner look
+      panel.grid.minor = element_blank(),
+      # Customize major grid lines color
+      panel.grid.major = element_blank(),
+      # Plot title: bold and custom relative size
+      plot.title = element_text(family = "Public Sans", face = "bold", size = rel(1.1), margin = margin(b = 10)),
+      # Subtitle and caption: lighter weight 
+      plot.subtitle = element_text(family = "Public Sans Light", face = "plain"),
+      plot.caption = element_text(family = "Public Sans Light", face = "plain"),
+      # Axis text: Relative size
+      axis.text = element_text(size = rel(0.9)),
+      # Axis titles: Semibold and custom relative size
+      axis.title = element_text(family = "Public Sans Semibold", size = rel(0.9)),
+      axis.title.x = element_text(hjust = 0.5),
+      axis.title.y = element_text(hjust = 0.5),
+      # Axis lines
+      axis.line = element_line(color = "grey25", linewidth = 0.8),
+      # Facet labels: bold text on grey background
+      strip.text = element_text(
+        family = "Public Sans Semibold", face = "plain",
+        size = rel(1),
+        hjust = 0.5
+      ),
+      strip.background = element_rect(fill = "grey95", color = "grey25", linewidth = 0.8), 
+      # Legend styling: compact and top-positioned
+      legend.title = element_text(family = "Public Sans Semibold", size = rel(0.8)),
+      legend.text = element_text(size = rel(0.8)),
+      legend.position = "top",
+      legend.justification = "center",
+      legend.title.position = "left",
+      legend.margin = margin(l = 0, t = 0)
+    )
+}
+
+
+theme_set(theme_nice())
+update_geom_defaults("text", list(family = "Public Sans"))
+update_geom_defaults("label", list(family = "Public Sans"))
+```
+
+```{r}
+#| include: false
+data_dir <- here("01_data")
+table_dir <- here("02_output", "tables", "RQ1")
+figure_dir <- here("02_output", "figures", "RQ1")
+model_dir <- here("02_output", "models", "RQ1")
+
+dir.create(table_dir, recursive = TRUE, showWarnings = TRUE)
+dir.create(figure_dir, recursive = TRUE, showWarnings = TRUE)
+dir.create(model_dir, recursive = TRUE, showWarnings = TRUE)
+```
+
+```{r}
+load(here(data_dir, "analysis", "df_long.RData"))
+
+df_long <- df_long |> 
+  mutate(conjoint_choice = as.numeric(conjoint_choice),
+         conjoint_sex = factor(conjoint_sex, levels = c("Male", "Female")),
+         conjoint_age = as.numeric(conjoint_age),
+         conjoint_party = factor(conjoint_party, 
+                                 levels = c("Labour", "Conservatives", "Liberal Democrats", 
+                                            "Green Party", "Reform UK")),
+         conjoint_dem = factor(conjoint_dem, 
+                     levels = c("undemocratic", "democratic"),
+                     labels = c("Undemocratic", "Democratic")),
+         conjoint_eco = factor(conjoint_eco, 
+                     levels = c("Neither good nor bad reputation on economic matters",
+                                "Good at handling economic matters",
+                                "Bad at handling economic matters"),
+                     labels = c("Neither", "Economically good", "Economically bad"))) |> 
+  mutate(conjoint_age_z = standardise(conjoint_age))
+
+levels(df_long$conjoint_sex)
+levels(df_long$conjoint_party)
+levels(df_long$conjoint_dem)
+levels(df_long$conjoint_eco)
+
+# Variable lookup table for later
+variable_lookup <- tibble(
+  variable = c("conjoint_sex", "conjoint_age_z", "conjoint_party", "conjoint_dem", "conjoint_eco"),
+  variable_nice = c("Sex", "Age", "Party", "Democratic behaviour", "Economic reputation")
+)
+```
+
+```{r}
+# brms settings
+bayes_seed <- 42
+chains <- 4
+iter <- 4000
+warmup <- floor(iter/2)
+adapt_delta <- 0.90
+max_treedepth <- 10
+```
+
+```{r}
+# marginaleffects settings
+options(marginaleffects_posterior_interval = "hdi")
+options(marginaleffects_posterior_center = stats::median)
+```
+
+## Model 0 — Conjoint Choices
+
+```{r}
+f_cj0 <- bf(conjoint_choice ~ conjoint_dem + conjoint_sex + conjoint_age_z + conjoint_party + conjoint_eco + (1 | id))
+
+priors_cj0 <- c(
+  prior(normal(0, 1), class = "Intercept"),
+  prior(normal(0, 1), class = "b"),
+  prior(exponential(1), class = "sd")
+)
+```
+
+```{r}
+#| output: false
+cj0 <- brm(
+  data = df_long,
+  family = bernoulli(link = "logit"),
+  formula = f_cj0,
+  prior = priors_cj0,
+  sample_prior = "yes",
+  init = "random",
+  chains = chains,
+  iter = iter,
+  warmup = warmup,
+  seed = bayes_seed,
+  control = list(
+    adapt_delta = adapt_delta,
+    max_treedepth = max_treedepth),
+  file = here(model_dir, "cj0.rds")
+)
+```
+
+```{r}
+print(cj0)
+```
+
+#### Quantities of interest
+
+Thanks go to Andrew Heiss and his [amazing blog](https://www.andrewheiss.com/blog/2023/07/25/conjoint-bayesian-frequentist-guide/#finding-conjoint-amces-and-marginal-means-bayesianly) from where I borrow much of this code!
+
+##### Average Marginal Component Effects (AMCEs) 
+
+```{r}
+cj0_slopes <- avg_slopes(cj0, 
+                         newdata = datagrid(id = unique(df_long$id))) |> 
+  as_tibble() |> 
+  select(Contrast = contrast,
+         Median = estimate,
+         "95% HDI Lower" = conf.low,
+         "95% HDI Upper" = conf.high
+  ) |> 
+  mutate(Contrast = if_else(Contrast == "dY/dX", "Age (1 SD increase)", Contrast),
+         across(where(is.numeric), \(x) round(x, 3))) 
+
+cj0_slopes |> tt()
+
+cj0_slopes |> tt() |> 
+  save_tt(here(table_dir, "conjoint_amces.docx"), overwrite = TRUE)
+```
+
+```{r}
+# Create levels for all variables 
+cj0_levels <- tibble(
+  variable = c("conjoint_sex", "conjoint_age_z", "conjoint_party", "conjoint_dem", "conjoint_eco"),
+  levels = "") |> 
+  mutate(levels = case_when(
+    variable == "conjoint_sex" ~ list(levels(df_long$conjoint_sex)),
+    variable == "conjoint_age_z" ~ list("1 SD increase"),
+    variable == "conjoint_party" ~ list(levels(df_long$conjoint_party)),
+    variable == "conjoint_dem" ~ list(levels(df_long$conjoint_dem)),
+    variable == "conjoint_eco" ~ list(levels(df_long$conjoint_eco))
+  )) |> 
+  unnest(levels) |>
+  mutate(term = paste0(variable, levels))
+
+# Calculate Average Marginal Effects and get Posterior Draws
+cj0_mfx <- cj0 |>
+  avg_slopes(newdata = datagrid(id = unique(df_long$id))) |>  
+  posterior_draws() 
+
+# Reshape Results (handle continuous and categorical separately)
+cj0_mfx_nested <- cj0_mfx |>
+  mutate(
+    variable_level = if_else(
+      term == "conjoint_age_z",
+      "1 SD increase",
+      str_extract(contrast, "^[^-]+(?= - )")
+    )
+  ) |>
+  group_by(term, variable_level) |>
+  nest()
+
+# Join Data
+cj0_plot_data <- cj0_levels |>
+  left_join(
+    cj0_mfx_nested,
+    by = join_by(variable == term, levels == variable_level)
+  ) |>
+  mutate(data = map_if(data, is.null, ~ tibble(draw = 0, estimate = 0))) |>
+  unnest(data) |>
+  left_join(variable_lookup, by = join_by(variable)) |>
+  mutate(across(c(levels, variable_nice), ~fct_inorder(.)))
+```
+
+```{r}
+#| fig-height: 7
+#| fig-width: 8
+#| fig-dpi: 600
+#| fig-showtext: TRUE
+showtext_opts(dpi = 600)
+
+cj0_plot_data |> 
+  
+  ggplot(aes(x = draw, y = levels, fill = variable_nice, color = variable_nice)) +
+  
+  geom_vline(xintercept = 0, linetype = "dashed", color = "gray40", linewidth = 0.6) +
+  
+  stat_slab(
+    data = ~filter(.x, draw != 0),
+    aes(thickness = after_stat(pdf)),
+    scale = 0.7,
+    alpha = 0.7,
+    normalize = "groups"
+  ) +
+  
+  stat_pointinterval(
+    .width = c(.95),
+    point_interval = "median_hdi",
+    position = position_nudge(y = -0.1),
+    point_size = 2,
+  ) +
+  
+  facet_col(facets = "variable_nice", scales = "free_y", space = "free") +
+  
+  scale_fill_brewer(palette = "Dark2") +
+  scale_color_brewer(palette = "Dark2") +
+  
+  scale_x_continuous(
+    labels = scales::percent, 
+    limits = c(-0.5, 0.5), 
+    breaks = seq(-0.5, 0.5, by = 0.1),
+    expand = expansion(add = 0.025)
+  ) +
+  
+  labs(
+    x = "Probability Change to Choose Candidate (vs. Reference)", 
+    y = NULL,  
+    title = "Average Marginal Component Effects",
+    subtitle = "Posterior Distributions with Median and 95% HDI"
+  ) +
+  
+  theme_nice() +
+  theme(
+    legend.position = "none",
+    panel.grid.major.x = element_line(color = "grey90", linewidth = 0.2)
+  )
+
+ggsave(here(figure_dir, "conjoint_amce.png"),
+       height = 7,
+       width = 8,
+       dpi = 600)
+```
+
+##### Marginal Means
+
+```{r}
+cj0_mm_sex <- avg_predictions(cj0, by = "conjoint_sex") |> as_tibble()
+cj0_mm_party <- avg_predictions(cj0, by = "conjoint_party") |> as_tibble()
+cj0_mm_dem <- avg_predictions(cj0, by = "conjoint_dem") |> as_tibble()
+cj0_mm_eco <- avg_predictions(cj0, by = "conjoint_eco") |> as_tibble()
+cj0_mm_age <- avg_predictions(cj0, 
+                              newdata = datagrid(conjoint_age_z = c(-1, 0, 1)),
+                              by = "conjoint_age_z") |> as_tibble()
+
+cj0_mm <- bind_rows(cj0_mm_sex, cj0_mm_party, cj0_mm_dem, cj0_mm_eco, cj0_mm_age)
+```
+
+```{r}
+cj0_mm_table <- cj0_mm |> 
+  pivot_longer(
+    cols = starts_with("conjoint_"), 
+    names_to = "Attribute", 
+    values_to = "Level", 
+    values_transform = as.character, 
+    values_drop_na = TRUE
+  ) |> 
+  mutate(
+    # Clean the Attribute names 
+    Attribute = Attribute |> 
+      str_remove("conjoint_") |> 
+      str_remove("_z") |>       # Removes "_z" from age
+      str_to_title(),           # Capitalizes the first letter
+    
+    # Recode the Age Levels
+    Level = case_when(
+      Attribute == "Age" & Level == "-1" ~ "-1 SD",
+      Attribute == "Age" & Level == "0"  ~ "Mean",
+      Attribute == "Age" & Level == "1"  ~ "+1 SD",
+      TRUE ~ Level 
+    )
+  ) |> 
+  # Final Selection and Formatting
+  select(
+    Attribute, 
+    Level,
+    Median = estimate,
+    "95% HDI Lower" = conf.low,
+    "95% HDI Upper" = conf.high
+  ) |> 
+  mutate(across(where(is.numeric), \(x) round(x, 3)))
+
+cj0_mm_table |> tt()
+```
+
+## Model 1 — Primary Model
+
+```{r}
+f_cj1 <- bf(conjoint_choice ~ conjoint_dem * exp_condition + conjoint_sex + conjoint_age_z + conjoint_party + conjoint_eco + (1 | id))
+
+priors_cj1 <- c(
+  prior(normal(0, 1), class = "Intercept"),
+  prior(normal(0, 1), class = "b"),
+  prior(exponential(1), class = "sd")
+)
+```
+
+```{r}
+#| output: false
+cj1 <- brm(
+  data = df_long,
+  family = bernoulli(link = "logit"),
+  formula = f_cj1,
+  prior = priors_cj1,
+  sample_prior = "yes",
+  init = "random",
+  chains = chains,
+  iter = iter,
+  warmup = warmup,
+  seed = bayes_seed,
+  control = list(
+    adapt_delta = adapt_delta,
+    max_treedepth = max_treedepth),
+  file = here(model_dir, "cj1.rds")
+)
+```
+
+```{r}
+print(cj1)
+```
+
+### Quantities of Interest
+
+#### Average Comparisons
+
+```{r}
+cj1_main_com <- avg_comparisons(cj1, 
+                                variables = list("conjoint_dem" = "pairwise")) |> 
+  as_tibble() |> 
+  select(Contrast = contrast,
+         Median = estimate,
+         "95% HDI Lower" = conf.low,
+         "95% HDI Upper" = conf.high
+  ) |> 
+  mutate(across(where(is.numeric), \(x) round(x, 3))) 
+
+cj1_main_com |> tt()
+```
+
+
+```{r}
+cj1_com <- avg_comparisons(cj1, 
+                           variables = list("conjoint_dem" = "pairwise"), 
+                           by = "exp_condition") |> 
+  as_tibble() |> 
+  select(Contrast = contrast,
+         Condition = exp_condition,
+         Median = estimate,
+         "95% HDI Lower" = conf.low,
+         "95% HDI Upper" = conf.high
+  ) |> 
+  mutate(across(where(is.numeric), \(x) round(x, 3))) 
+
+cj1_com |> tt()
+```
+
+```{r}
+cj1_hyp <- avg_comparisons(cj1, 
+                           variables = list("conjoint_dem" = "pairwise"), 
+                           by = "exp_condition", 
+                           hypothesis = ~pairwise) |> 
+  as_tibble() |> 
+  select(Hypothesis = hypothesis,
+         Median = estimate,
+         "95% HDI Lower" = conf.low,
+         "95% HDI Upper" = conf.high
+  ) |> 
+  mutate(across(where(is.numeric), \(x) round(x, 3))) 
+
+cj1_hyp |> tt()
+```
+
+#### Conditional Marginal Means
+
+```{r}
+cj1_mms <- predictions(
+  cj1,
+  by = c("conjoint_dem", "exp_condition"),
+  allow_new_levels = TRUE) |> 
+  posterior_draws()
+
+cj1_mms |> 
+  group_by(conjoint_dem, exp_condition) %>% 
+  median_qi(draw) |> 
+  tt()
+```
+
+## Model 2 — Interaction with Age 
+
+```{r}
+f_cj2 <- bf(conjoint_choice ~ conjoint_dem * exp_condition * age_group + conjoint_sex + conjoint_age_z + conjoint_party + conjoint_eco + (1 | id))
+```
+
+```{r}
+#| output: false
+cj2 <- brm(
+  data = df_long,
+  family = bernoulli(link = "logit"),
+  formula = f_cj2,
+  prior = priors_cj1,
+  sample_prior = "yes",
+  init = "random",
+  chains = chains,
+  iter = iter,
+  warmup = warmup,
+  seed = bayes_seed,
+  control = list(
+    adapt_delta = adapt_delta,
+    max_treedepth = max_treedepth),
+  file = here(model_dir, "cj2.rds")
+)
+```
+
+```{r}
+print(cj2)
+```
+
+## Model 3 — Interaction with Gender
+
+```{r}
+f_cj3 <- bf(conjoint_choice ~ conjoint_dem * exp_condition * gender + conjoint_sex + conjoint_age_z + conjoint_party + conjoint_eco + (1 | id))
+```
+
+```{r}
+#| output: false
+cj3 <- brm(
+  data = df_long,
+  family = bernoulli(link = "logit"),
+  formula = f_cj3,
+  prior = priors_cj1,
+  sample_prior = "yes",
+  init = "random",
+  chains = chains,
+  iter = iter,
+  warmup = warmup,
+  seed = bayes_seed,
+  control = list(
+    adapt_delta = adapt_delta,
+    max_treedepth = max_treedepth),
+  file = here(model_dir, "cj3.rds")
+)
+```
+
+```{r}
+print(cj3)
+```
+
+## Visualization
+
+### Get Posterior Draws
+
+```{r}
+# CJ1: Overall cAMCEs by experimental condition
+cj1.cAMCEs <- cj1 |>
+  avg_slopes(
+    variables = "conjoint_dem",
+    by = "exp_condition",
+    re_formula = NA
+  ) |>
+  posterior_draws()
+
+# Compute pairwise contrasts 
+cj1.contrasts <- cj1.cAMCEs |>
+  select(drawid, exp_condition, draw) |>  
+  pivot_wider(names_from = exp_condition, values_from = draw) |>
+  mutate(
+    `Anxiety − Control` = anxiety - control,
+    `Hope − Control` = hope - control,
+    `Hope − Anxiety` = hope - anxiety
+  ) |>
+  pivot_longer(
+    cols = c(`Anxiety − Control`, `Hope − Control`, `Hope − Anxiety`),
+    names_to = "contrast",
+    values_to = "estimate"
+  ) |>
+  mutate(
+    model = "ATE",
+    subgroup = "ATE"
+  )
+
+cj1.contrasts |>
+  group_by(contrast, model, subgroup) |>
+  median_hdi(estimate, .width = 0.95) |> tt()
+```
+
+```{r}
+# CJ3: cAMCEs by condition × age group
+cj2.cAMCEs <- cj2 |>
+  avg_slopes(
+    variables = "conjoint_dem",
+    by = c("exp_condition", "age_group"),
+    re_formula = NA
+  ) |>
+  posterior_draws()
+
+# Compute pairwise contrasts within each age group
+cj2.contrasts <- cj2.cAMCEs |>
+  select(drawid, exp_condition, age_group, draw) |>
+  pivot_wider(names_from = exp_condition, values_from = draw) |>
+  mutate(
+    `Anxiety − Control` = anxiety - control,
+    `Hope − Control` = hope - control,
+    `Hope − Anxiety` = hope - anxiety
+  ) |>
+  pivot_longer(
+    cols = c(`Anxiety − Control`, `Hope − Control`, `Hope − Anxiety`),
+    names_to = "contrast",
+    values_to = "estimate"
+  ) |>
+  mutate(
+    model = "Age",
+    subgroup = as.character(age_group)
+  ) |>
+  select(-age_group)
+
+cj2.contrasts |>
+  group_by(contrast, model, subgroup) |>
+  median_hdi(estimate, .width = 0.95) |> tt()
+```
+
+```{r}
+# CJ4: cAMCEs by condition × gender
+cj3.cAMCEs <- cj3 |>
+  avg_slopes(
+    variables = "conjoint_dem",
+    by = c("exp_condition", "gender"),
+    re_formula = NA
+  ) |>
+  posterior_draws()
+
+# Compute pairwise contrasts within each gender
+cj3.contrasts <- cj3.cAMCEs |>
+  select(drawid, exp_condition, gender, draw) |>
+  pivot_wider(names_from = exp_condition, values_from = draw) |>
+  mutate(
+    `Anxiety − Control` = anxiety - control,
+    `Hope − Control` = hope - control,
+    `Hope − Anxiety` = hope - anxiety
+  ) |>
+  pivot_longer(
+    cols = c(`Anxiety − Control`, `Hope − Control`, `Hope − Anxiety`),
+    names_to = "contrast",
+    values_to = "estimate"
+  ) |>
+  mutate(
+    model = "Gender",
+    subgroup = as.character(gender)
+  ) |>
+  select(-gender)
+
+cj3.contrasts |>
+  group_by(contrast, model, subgroup) |>
+  median_hdi(estimate, .width = 0.95) |> tt()
+```
+
+```{r}
+# Combine all contrasts
+cj_pairwise_plot_data <- bind_rows(cj1.contrasts, cj2.contrasts, cj3.contrasts) |>
+  filter(subgroup != "other") |> 
+  mutate(
+    # Relabel gender
+    subgroup = case_when(
+      subgroup == "male" ~ "Men",
+      subgroup == "female" ~ "Women",
+      subgroup == "16-21 years" ~ "16-21",
+      subgroup == "22-26 years" ~ "22-26",
+      TRUE ~ subgroup
+    ),
+    # Set factor levels
+    contrast = factor(contrast, levels = c("Anxiety − Control", "Hope − Control", "Hope − Anxiety")),
+    model = factor(model, levels = c("ATE", "Age", "Gender")),
+    subgroup = factor(subgroup, levels = c("ATE", "22-26", "16-21", "Women", "Men"))
+  )
+
+# Compute whether HDI excludes zero for each group
+cj_hdi_check <- cj_pairwise_plot_data |>
+  group_by(model, contrast, subgroup) |>
+  median_hdi(estimate, .width = 0.95) |>
+  mutate(excludes_zero = if_else(sign(.lower) == sign(.upper), "Excludes zero", "Includes zero")) |>
+  select(model, contrast, subgroup, excludes_zero)
+```
+
+### Create Figure
+
+```{r}
+#| fig-height: 5.5
+#| fig-width: 8
+#| fig-dpi: 600
+#| fig-showtext: TRUE
+showtext_opts(dpi = 600)
+cj_pairwise_plot_data |>
+  mutate(estimate = estimate * 100) |>
+  left_join(cj_hdi_check, by = c("model", "contrast", "subgroup")) |>
+  ggplot(aes(x = estimate, y = subgroup, fill = excludes_zero)) +
+  geom_vline(xintercept = 0, linetype = "dashed", color = "gray40", linewidth = 0.6) +
+  stat_slabinterval(
+    .width = c(.95),
+    point_interval = "median_hdi",
+    scale = 0.7,
+    slab_alpha = 0.6,        
+    interval_alpha = 1,      
+    point_alpha = 1,          
+    normalize = "groups",
+    point_size = 2.5,
+    interval_size = 1.5) +
+  facet_grid(model ~ contrast, scales = "free_y", space = "free_y") +
+  scale_fill_manual(
+    values = c("Excludes zero" = "#364B9A", "Includes zero" = "#4A7BB7"),
+    name = "95% HDI",
+  ) +
+  # scale_color_manual(
+  #   values = c("Excludes zero" = "#364B9A", "Includes zero" = "#4A7BB7"),
+  #   name = "95% HDI",
+  # ) +
+  scale_x_continuous(limits = c(-20, 20), breaks = seq(-15, 15, by = 5), expand = expansion(add = 0.5)) +
+  labs(
+    x = "Percentage Points",
+    y = NULL,
+    title = "Effects on Democratic Candidate Preference",
+    subtitle = "Positive Differences = Preference for Democratic Candidates"
+  ) +
+  theme_nice() +
+  theme(
+    panel.grid.major.x = element_line(color = "grey90", linewidth = 0.2),
+    legend.position = "none"
+  )
+
+ggsave(here(figure_dir, "RQ1.2_ate_cate_posterior.png"),
+       height = 5.5,
+       width = 8,
+       dpi = 600)
+```
+
+## Model 4 — Control for Demograpics & Pre-Measures
+
+```{r}
+df_control <- df_long |> 
+  mutate(ideology = left_right / 10,
+         education_level = coalesce(education_level, education)) |> 
+  droplevels()
+```
+
+```{r}
+f_cj4 <- bf(conjoint_choice ~ conjoint_dem * exp_condition + conjoint_sex + conjoint_age_z + conjoint_party + conjoint_eco + scale(participant_age) + gender + ideology + education_level + living_standard + (1 | id))
+
+priors_cj4 <- c(
+  prior(normal(0, 1), class = "Intercept"),
+  prior(normal(0, 1), class = "b"),
+  prior(exponential(1), class = "sd")
+)
+```
+
+```{r}
+#| output: false
+cj4 <- brm(
+  data = df_control,
+  family = bernoulli(link = "logit"),
+  formula = f_cj4,
+  prior = priors_cj4,
+  sample_prior = "yes",
+  init = "random",
+  chains = chains,
+  iter = iter,
+  warmup = warmup,
+  seed = bayes_seed,
+  control = list(
+    adapt_delta = adapt_delta,
+    max_treedepth = max_treedepth),
+  file = here(model_dir, "cj4.rds")
+)
+```
+
+```{r}
+print(cj4)
+```
+
+## Model 5 — Pre-Registered Sample Only
+
+Participants aged 16-21 or participants who were recontacted:
+
+```{r}
+df_prereg <- df_long |> 
+  filter(age_group == "16-21 years" | sample_type == "recontact")
+```
+
+```{r}
+f_cj5 <- bf(conjoint_choice ~ conjoint_dem * exp_condition + conjoint_sex + conjoint_age_z + conjoint_party + conjoint_eco + (1 | id))
+
+priors_cj5 <- c(
+  prior(normal(0, 1), class = "Intercept"),
+  prior(normal(0, 1), class = "b"),
+  prior(exponential(1), class = "sd")
+)
+```
+
+```{r}
+#| output: false
+cj5 <- brm(
+  data = df_prereg,
+  family = bernoulli(link = "logit"),
+  formula = f_cj5,
+  prior = priors_cj5,
+  sample_prior = "yes",
+  init = "random",
+  chains = chains,
+  iter = iter,
+  warmup = warmup,
+  seed = bayes_seed,
+  control = list(
+    adapt_delta = adapt_delta,
+    max_treedepth = max_treedepth),
+  file = here(model_dir, "cj5.rds")
+)
+```
+
+```{r}
+print(cj5)
+```
+
+## Supplementary Models
+
+## Eco Model — Trading Off Democracy for Ecomony?
+
+```{r}
+f_cj_eco <- bf(conjoint_choice ~ conjoint_dem * conjoint_eco + conjoint_sex + conjoint_age_z + conjoint_party + (1 | id))
+```
+
+```{r}
+#| output: false
+cj_eco <- brm(
+  data = df_long,
+  family = bernoulli(link = "logit"),
+  formula = f_cj_eco,
+  prior = priors_cj0,
+  sample_prior = "yes",
+  init = "random",
+  chains = chains,
+  iter = iter,
+  warmup = warmup,
+  seed = bayes_seed,
+  control = list(
+    adapt_delta = adapt_delta,
+    max_treedepth = max_treedepth),
+  file = here(model_dir, "cj_eco.rds")
+)
+```
+
+```{r}
+print(cj_eco)
+```
+
+### Quantities of Interest
+
+```{r}
+cj_eco_pred <- plot_predictions(cj_eco, by = c("conjoint_dem", "conjoint_eco"), draw = F)
+```
+
+```{r}
+cj_eco_pred |> 
+  ggplot(aes(x = conjoint_dem, y = estimate, color = conjoint_eco)) +
+  geom_pointrange(aes(ymin = conf.low, ymax = conf.high),
+                  position = position_dodge(width = 0.2),
+                  size = 0.5, linewidth = 1) +
+  scale_y_continuous(
+    limits = c(0.1, 0.9), 
+    breaks = seq(0, 1, by = 0.2),
+    labels = scales::percent  
+  ) +
+  labs(
+    x = "Recent behaviour",
+    y = "Marginal mean",
+    title = "Marginal means",
+    color = "Economic reputation" 
+  ) 
+```
+
+
+
+
+
+
+
+
+
+
+

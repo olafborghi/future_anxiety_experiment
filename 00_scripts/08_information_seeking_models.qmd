@@ -1,0 +1,858 @@
+---
+title: "RQ2.1 Political Information Seeking Models"
+description: "How do feelings about the future affect young people's political information seeking?" 
+
+format:
+  html:
+    theme: paper
+    shift-heading-level-by: 1
+    code-tools: true
+    code-fold: true
+    toc: true
+    toc-fold: false
+    toc-location: right
+    toc-depth: 4
+    toc-title: "Contents"
+
+# Portability settings
+embed-resources: true
+
+# Execution options 
+execute:
+  warning: false
+---
+
+```{r}
+#| include: false
+# set error messages to English
+Sys.setenv(LANG = "en")
+
+knitr::opts_chunk$set(
+  fig.align = "center", 
+  fig.retina = 3,
+  fig.width = 6, 
+  fig.height = (6 * 0.618),
+  out.width = "90%", 
+  collapse = FALSE
+)
+
+options(
+  digits = 4,
+  width = 300,
+  dplyr.summarise.inform = FALSE)
+```
+
+```{r libraries, warning=T, message=T}
+#| include: false
+#| warning: true
+#| message: true
+if (!require("groundhog", quietly = TRUE)) {
+  install.packages("groundhog")
+}
+library("groundhog")
+
+# use groundhog to install and load packages
+pkgs <- c("here",         # System path management
+          "tidyverse",    # ggplot, dplyr, and friends
+          "datawizard",   # Data preparation tools
+          "performance",  # Outlier, indices of model quality, and goodness of fit
+          "brms",         # Bayesian regression modelling in Stan
+          "marginaleffects", # Model-based predictions, comparisons, and more marginalia
+          "tidybayes",    # Tools to work with Bayesian models 
+          "tinytable",    # Minimalist tables
+          "modelsummary", # Data and model summaries with tables and plots
+          "ggdist",       # Additional plot elements
+          "ggrain",       # For fancy raincloud plots
+          # "GGally",       # ggpairs and other ggplot2 friends
+          # "ggsignif",     # Add significance to figures
+          "patchwork",    # Combine multiple ggplots
+          "showtext"      # Additional fonts for plots etc
+          )
+
+groundhog.library(pkgs, "2026-01-01")
+```
+
+```{r}
+#| include: false
+# I use the faster cmdstanr backend for Stan in the place of rstan
+# to do so install the cmdstanr package first: https://mc-stan.org/cmdstanr/
+# Then run cmdstanr::install_cmdstan() to install cmdstan on your computer.
+# RTools must be installed. For more info see 
+# https://mc-stan.org/cmdstanr/articles/cmdstanr.html#introduction
+
+# install.packages("cmdstanr", repos = c('https://stan-dev.r-universe.dev', getOption("repos")))
+# cmdstanr::install_cmdstan()
+
+options(mc.cores = 4,  
+        brms.backend = "cmdstanr")
+```
+
+```{r}
+#| include: false
+
+showtext_auto()
+showtext_opts(dpi = 600)
+
+font_add_google("Public Sans", "Public Sans")
+font_add_google("Public Sans", "Public Sans Light", regular.wt = 300)
+font_add_google("Public Sans", "Public Sans Semibold", regular.wt = 600)
+
+# Custom ggplot theme
+theme_nice <- function() {
+  # General text family and base size
+  theme_minimal(base_family = "Public Sans", base_size = 14) +
+    theme(
+      # Remove minor grid lines for cleaner look
+      panel.grid.minor = element_blank(),
+      # Customize major grid lines color
+      panel.grid.major = element_blank(),
+      # Plot title: bold and custom relative size
+      plot.title = element_text(family = "Public Sans", face = "bold", size = rel(1.1), margin = margin(b = 10)),
+      # Subtitle and caption: lighter weight 
+      plot.subtitle = element_text(family = "Public Sans Light", face = "plain"),
+      plot.caption = element_text(family = "Public Sans Light", face = "plain"),
+      # Axis text: Relative size
+      axis.text = element_text(size = rel(0.9)),
+      # Axis titles: Semibold and custom relative size
+      axis.title = element_text(family = "Public Sans Semibold", size = rel(0.9)),
+      axis.title.x = element_text(hjust = 0.5),
+      axis.title.y = element_text(hjust = 0.5),
+      # Axis lines
+      axis.line = element_line(color = "grey25", linewidth = 0.8),
+      # Facet labels: bold text on grey background
+      strip.text = element_text(
+        family = "Public Sans Semibold", face = "plain",
+        size = rel(1),
+        hjust = 0.5
+      ),
+      strip.background = element_rect(fill = "grey95", color = "grey25", linewidth = 0.8), 
+      # Legend styling: compact and top-positioned
+      legend.title = element_text(family = "Public Sans Semibold", size = rel(0.8)),
+      legend.text = element_text(size = rel(0.8)),
+      legend.position = "top",
+      legend.justification = "center",
+      legend.title.position = "left",
+      legend.margin = margin(l = 0, t = 0)
+    )
+}
+
+
+theme_set(theme_nice())
+update_geom_defaults("text", list(family = "Public Sans"))
+update_geom_defaults("label", list(family = "Public Sans"))
+```
+
+```{r}
+#| include: false
+data_dir <- here("01_data")
+table_dir <- here("02_output", "tables", "RQ2")
+figure_dir <- here("02_output", "figures", "RQ2")
+model_dir <- here("02_output", "models", "RQ2")
+
+dir.create(table_dir, recursive = TRUE, showWarnings = TRUE)
+dir.create(figure_dir, recursive = TRUE, showWarnings = TRUE)
+dir.create(model_dir, recursive = TRUE, showWarnings = TRUE)
+```
+
+```{r}
+load(here(data_dir, "analysis", "df_wide.RData"))
+df <- df_wide
+rm(df_wide)
+```
+
+## Quick Look at Data
+
+```{r}
+df |> 
+  mutate(
+    exp_polinfo = factor(exp_polinfo,
+                         levels = c("No, I do not want to see information on how to get more involved in democracy",
+                                    "Yes, I want to see information on how to get more involved in democracy"),
+                         labels = c("No", "Yes"))) |> 
+  datasummary_crosstab(exp_polinfo ~ exp_condition, data = _)
+```
+
+```{r}
+df |> 
+  mutate(
+    exp_polinfo = factor(exp_polinfo,
+                         levels = c("No, I do not want to see information on how to get more involved in democracy",
+                                    "Yes, I want to see information on how to get more involved in democracy"),
+                         labels = c("No", "Yes"))) |> 
+  select(exp_polinfo, exp_polinfo_time) |> 
+  datasummary_skim()  
+```
+
+```{r}
+df |> 
+  filter(exp_polinfo == "Yes, I want to see information on how to get more involved in democracy") |> 
+  datasummary(exp_polinfo_time ~ exp_condition * (Mean + Median + SD),
+              data = _,
+              fmt = 2)  
+```
+
+```{r}
+df |> 
+  filter(exp_polinfo == "Yes, I want to see information on how to get more involved in democracy") |> 
+  filter(exp_polinfo_time < 150) |>
+  ggplot(aes(x = exp_condition, y = exp_polinfo_time,
+             fill = exp_condition, color = exp_condition)) +
+  geom_rain(
+    alpha = 0.5,
+    boxplot.args = list(color = "black", outlier.shape = NA)
+  ) +
+  stat_summary(
+    fun = mean,
+    geom = "point",
+    size = 4,
+    fill = "white",
+    shape = 21,
+    stroke = 1
+  ) +
+  scale_fill_brewer(palette = "Dark2") +
+  scale_color_brewer(palette = "Dark2") +
+  labs(
+    title = "Time Spent on Political Information",
+    x = "Experimental Condition",
+    y = "Time (seconds)" # Add a y-axis label
+  ) +
+  theme(
+    legend.position = "none"
+  )
+```
+
+## Main Models to Estimate the ATEs
+
+```{r}
+# Model data
+df_info <- df |> 
+  mutate(
+    polinfo_choice = case_when(
+      exp_polinfo == "No, I do not want to see information on how to get more involved in democracy" ~ 0,
+      exp_polinfo == "Yes, I want to see information on how to get more involved in democracy" ~ 1,
+      TRUE ~ NA_integer_),
+    polinfo_time = exp_polinfo_time
+  ) |> 
+  mutate(
+    polinfo = if_else(polinfo_choice == 1, polinfo_time, 0)
+  )
+```
+
+```{r}
+# brms settings
+bayes_seed <- 42
+chains <- 4
+iter <- 4000
+warmup <- floor(iter/2)
+adapt_delta <- 0.90
+max_treedepth <- 10
+```
+
+```{r}
+# marginaleffects settings
+options(marginaleffects_posterior_interval = "hdi")
+options(marginaleffects_posterior_center = stats::median)
+```
+
+### Model 1 
+
+```{r}
+f_hu1 <- bf(
+  polinfo ~ exp_condition,
+  hu ~ exp_condition)
+
+priors_hu1 <- c(
+  prior(normal(2, 1.5), class = "Intercept"),
+  prior(normal(0, 1), class = "b"),
+  prior(normal(0, 1), class = "Intercept", dpar = "hu"),
+  prior(normal(0, 1), class = "b", dpar = "hu"),
+  prior(exponential(1), class = "sigma")
+)
+```
+
+```{r}
+#| output: false
+hu1 <- brm(
+  data = df_info,
+  formula = f_hu1,
+  family = hurdle_lognormal(),
+  prior = priors_hu1,
+  sample_prior = "yes",
+  init = "random",
+  chains = chains,
+  iter = iter,
+  warmup = warmup,
+  seed = bayes_seed,
+  control = list(
+    adapt_delta = adapt_delta,
+    max_treedepth = max_treedepth
+  ),
+  file = here(model_dir, "hu1.rds")
+)
+```
+
+```{r}
+print(hu1)
+```
+
+#### Quantities of interest
+
+##### Initiation of Information Seeking
+
+```{r}
+iis1_pred_avg <- avg_predictions(hu1,
+                               dpar = "hu",) |> 
+  as_tibble() |> 
+  mutate(Median = 1 - estimate,
+         "95% HDI Lower" = 1 - conf.high,
+         "95% HDI Upper" = 1 - conf.low
+         ) |> 
+  select(Median,
+         "95% HDI Lower",
+         "95% HDI Upper" 
+         ) 
+
+iis1_pred_avg |> tt()
+```
+
+```{r}
+iis1_pred <- avg_predictions(hu1, 
+                             dpar = "hu",
+                             by = "exp_condition") |> 
+  as_tibble() |> 
+  # Flip the direction as hu models decision NOT to view
+  mutate(Median = 1 - estimate,
+         "95% HDI Lower" = 1 - conf.high,
+         "95% HDI Upper" = 1 - conf.low
+         ) |> 
+  select(Condition = exp_condition,
+         Median,
+         "95% HDI Lower",
+         "95% HDI Upper" 
+         ) 
+
+iis1_pred |> tt()
+```
+
+```{r}
+iis1_comp <- avg_comparisons(hu1, 
+                            dpar = "hu", 
+                            variables = list(exp_condition = "pairwise")) |> 
+  as_tibble() |> 
+  select(Contrast = contrast,
+         Median = estimate,
+         "95% HDI Lower" = conf.low,
+         "95% HDI Upper" = conf.high
+         ) |> 
+  mutate(across(where(is.numeric), \(x) round(x, 3)))
+
+iis1_comp |> tt()
+```
+
+##### Extent of Information Seeking
+
+```{r}
+eis1_pred_avg <- avg_predictions(hu1,
+                                dpar = "mu",
+                                transform = exp # Translates the log-scale mu to the natural scale median
+                                ) |> 
+  as_tibble() |> 
+  select(Median = estimate,
+         "95% HDI Lower" = conf.low,
+         "95% HDI Upper" = conf.high 
+         ) 
+
+eis1_pred_avg |> tt()
+```
+
+```{r}
+eis1_pred <- avg_predictions(hu1, 
+                             dpar = "mu",
+                             by = "exp_condition",
+                             transform = exp) |> 
+  as_tibble() |> 
+  select(Condition = exp_condition,
+         Median = estimate,
+         "95% HDI Lower" = conf.low,
+         "95% HDI Upper" = conf.high 
+         ) 
+
+eis1_pred |> tt()
+```
+
+```{r}
+eis1_comp <- avg_comparisons(hu1, 
+                             dpar = "mu",
+                             comparison = function(hi, lo) exp(hi) - exp(lo),
+                             variables = list(exp_condition = "pairwise")) |> 
+  as_tibble() |> 
+  select(Contrast = contrast,
+         Median = estimate,
+         "95% HDI Lower" = conf.low,
+         "95% HDI Upper" = conf.high
+         ) |> 
+  mutate(across(where(is.numeric), \(x) round(x, 3)))
+
+eis1_comp |> tt()
+```
+
+### Model 2 — Interaction with Age Group
+
+```{r}
+f_hu2 <- bf(
+  polinfo ~ exp_condition * age_group,
+  hu ~ exp_condition * age_group)
+```
+
+```{r}
+#| output: false
+hu2 <- brm(
+  data = df_info,
+  formula = f_hu2,
+  family = hurdle_lognormal(),
+  prior = priors_hu1,
+  sample_prior = "yes",
+  init = "random",
+  chains = chains,
+  iter = iter,
+  warmup = warmup,
+  seed = bayes_seed,
+  control = list(
+    adapt_delta = adapt_delta,
+    max_treedepth = max_treedepth
+  ),
+  file = here(model_dir, "hu2.rds")
+)
+```
+
+```{r}
+summary(hu2)
+```
+
+#### Quantities of interest
+
+##### Initiation of Information Seeking
+
+```{r}
+iis2_comp <- avg_comparisons(hu2, 
+                             dpar = "hu", 
+                             variables = list(exp_condition = "pairwise"), 
+                             by = "age_group") |> 
+  as_tibble() |> 
+  select(Contrast = contrast,
+         `Age Group` = age_group,
+         Median = estimate,
+         "95% HDI Lower" = conf.low,
+         "95% HDI Upper" = conf.high
+         ) |> 
+  mutate(across(where(is.numeric), \(x) round(x, 4)))
+
+iis2_comp |> tt()
+```
+
+##### Extent of Information Seeking
+
+```{r}
+eis2_comp <- avg_comparisons(hu2, 
+                             dpar = "mu",
+                             variables = list(exp_condition = "pairwise"), 
+                             comparison = function(hi, lo) exp(hi) - exp(lo),
+                             by = "age_group") |> 
+  as_tibble() |> 
+  select(Contrast = contrast,
+         `Age Group` = age_group,
+         Median = estimate,
+         "95% HDI Lower" = conf.low,
+         "95% HDI Upper" = conf.high
+         ) |> 
+  mutate(across(where(is.numeric), \(x) round(x, 4)))
+
+eis2_comp |> tt()
+```
+
+### Model 3 — Interaction with Gender
+
+```{r}
+f_hu3 <- bf(
+  polinfo ~ exp_condition * gender,
+  hu ~ exp_condition * gender)
+```
+
+```{r}
+#| output: false
+hu3 <- brm(
+  data = df_info,
+  formula = f_hu3,
+  family = hurdle_lognormal(),
+  prior = priors_hu1,
+  sample_prior = "yes",
+  init = "random",
+  chains = chains,
+  iter = iter,
+  warmup = warmup,
+  seed = bayes_seed,
+  control = list(
+    adapt_delta = adapt_delta,
+    max_treedepth = max_treedepth
+  ),
+  file = here(model_dir, "hu3.rds")
+)
+```
+
+```{r}
+summary(hu3)
+```
+
+#### Quantities of interest
+
+##### Initiation of Information Seeking
+
+```{r}
+iis5_comp <- avg_comparisons(hu3, 
+                            dpar = "hu", 
+                            variables = list(exp_condition = "pairwise"), 
+                            by = "gender") |> 
+  as_tibble() |> 
+  select(Contrast = contrast,
+         Gender = gender,
+         Median = estimate,
+         "95% HDI Lower" = conf.low,
+         "95% HDI Upper" = conf.high
+  ) |> 
+  mutate(across(where(is.numeric), \(x) round(x, 4)))
+
+iis5_comp |> tt()
+```
+
+##### Extent of Information Seeking
+
+```{r}
+eis5_comp <- avg_comparisons(hu3, 
+                             dpar = "mu",
+                             variables = list(exp_condition = "pairwise"), 
+                             comparison = function(hi, lo) exp(hi) - exp(lo),
+                             by = "gender") |> 
+  as_tibble() |> 
+  select(Contrast = contrast,
+         Gender = gender,
+         Median = estimate,
+         "95% HDI Lower" = conf.low,
+         "95% HDI Upper" = conf.high
+  ) |> 
+  mutate(across(where(is.numeric), \(x) round(x, 4)))
+
+eis5_comp |> tt()
+```
+
+## Supplementary Models
+
+### Model 4 — Control for Demographics
+
+```{r}
+df_control <- df_info |> 
+  mutate(ideology = left_right / 10,
+         education_level = coalesce(education_level, education)) |> 
+  droplevels()
+
+f_hu4 <- bf(
+  polinfo ~ exp_condition + scale(age) + gender + ideology + education_level + living_standard,
+  hu ~ exp_condition + scale(age) + gender + ideology + education_level + living_standard)
+```
+
+```{r}
+#| output: false
+hu4 <- brm(
+  data = df_control,
+  formula = f_hu4,
+  family = hurdle_lognormal(),
+  prior = priors_hu1,
+  sample_prior = "yes",
+  init = "random",
+  chains = chains,
+  iter = iter,
+  warmup = warmup,
+  seed = bayes_seed,
+  control = list(
+    adapt_delta = adapt_delta,
+    max_treedepth = max_treedepth
+  ),
+  file = here(model_dir, "hu4.rds")
+)
+```
+
+```{r}
+print(hu4)
+```
+
+#### Quantities of interest
+
+##### Initiation of Information Seeking
+
+```{r}
+iis4_comp <- avg_comparisons(hu4, 
+                             dpar = "hu", 
+                             variables = list(exp_condition = "pairwise")) |> 
+  as_tibble() |> 
+  select(Contrast = contrast,
+         Median = estimate,
+         "95% HDI Lower" = conf.low,
+         "95% HDI Upper" = conf.high
+  ) |> 
+  mutate(across(where(is.numeric), \(x) round(x, 3)))
+
+iis4_comp |> tt()
+```
+
+##### Extent of Information Seeking
+
+```{r}
+eis4_comp <- avg_comparisons(hu4, 
+                             dpar = "mu",
+                             comparison = function(hi, lo) exp(hi) - exp(lo),
+                             variables = list(exp_condition = "pairwise")) |> 
+  as_tibble() |> 
+  select(Contrast = contrast,
+         Median = estimate,
+         "95% HDI Lower" = conf.low,
+         "95% HDI Upper" = conf.high
+  ) |> 
+  mutate(across(where(is.numeric), \(x) round(x, 3)))
+
+eis4_comp |> tt()
+```
+
+### Model 5 — Pre-Registered Sample Only
+
+Participants aged 16-21 or participants who were recontacted:
+```{r}
+df_info_prereg <- df_info |> 
+  filter(age_group == "16-21 years" | sample_type == "recontact")
+```
+
+```{r}
+#| output: false
+hu5 <- brm(
+  data = df_info_prereg,
+  formula = f_hu1,
+  family = hurdle_lognormal(),
+  prior = priors_hu1,
+  sample_prior = "yes",
+  init = "random",
+  chains = chains,
+  iter = iter,
+  warmup = warmup,
+  seed = bayes_seed,
+  control = list(
+    adapt_delta = adapt_delta,
+    max_treedepth = max_treedepth
+  ),
+  file = here(model_dir, "hu5.rds")
+)
+```
+
+```{r}
+print(hu5)
+```
+
+#### Quantities of interest
+
+##### Initiation of Information Seeking
+
+```{r}
+iis3_comp <- avg_comparisons(hu5, 
+                            dpar = "hu", 
+                            variables = list(exp_condition = "pairwise")) |> 
+  as_tibble() |> 
+  select(Contrast = contrast,
+         Median = estimate,
+         "95% HDI Lower" = conf.low,
+         "95% HDI Upper" = conf.high
+  ) |> 
+  mutate(across(where(is.numeric), \(x) round(x, 3)))
+
+iis3_comp |> tt()
+```
+
+##### Extent of Informatoin Seeking
+
+```{r}
+eis3_comp <- avg_comparisons(hu5, 
+                             dpar = "mu",
+                             comparison = function(hi, lo) exp(hi) - exp(lo),
+                             variables = list(exp_condition = "pairwise")) |> 
+  as_tibble() |> 
+  select(Contrast = contrast,
+         Median = estimate,
+         "95% HDI Lower" = conf.low,
+         "95% HDI Upper" = conf.high
+  ) |> 
+  mutate(across(where(is.numeric), \(x) round(x, 3)))
+
+eis3_comp |> tt()
+```
+
+### Model 6 — Attentive Participants Only 
+
+Attentive participants:
+```{r}
+df_info_att <- df_info |> 
+  filter(exp_attention == "Costs of living",
+         pre_attention1 == "passed",
+         pre_attention2 == "passed",
+         pre_attention3 == "passed",
+         post_attention1 == "passed")
+```
+
+```{r}
+#| output: false
+hu6 <- brm(
+  data = df_info_att,
+  formula = f_hu1,
+  family = hurdle_lognormal(),
+  prior = priors_hu1,
+  sample_prior = "yes",
+  init = "random",
+  chains = chains,
+  iter = iter,
+  warmup = warmup,
+  seed = bayes_seed,
+  control = list(
+    adapt_delta = adapt_delta,
+    max_treedepth = max_treedepth
+  ),
+  file = here(model_dir, "hu6.rds")
+)
+```
+
+```{r}
+print(hu6)
+```
+
+#### Quantities of interest
+
+##### Initiation of Information Seeking
+
+```{r}
+iis6_comp <- avg_comparisons(hu6, 
+                             dpar = "hu", 
+                             variables = list(exp_condition = "pairwise")) |> 
+  as_tibble() |> 
+  select(Contrast = contrast,
+         Median = estimate,
+         "95% HDI Lower" = conf.low,
+         "95% HDI Upper" = conf.high
+  ) |> 
+  mutate(across(where(is.numeric), \(x) round(x, 3)))
+
+iis6_comp |> tt()
+```
+
+##### Extent of Information Seeking
+
+```{r}
+eis6_comp <- avg_comparisons(hu6, 
+                             dpar = "mu",
+                             comparison = function(hi, lo) exp(hi) - exp(lo),
+                             variables = list(exp_condition = "pairwise")) |> 
+  as_tibble() |> 
+  select(Contrast = contrast,
+         Median = estimate,
+         "95% HDI Lower" = conf.low,
+         "95% HDI Upper" = conf.high
+  ) |> 
+  mutate(across(where(is.numeric), \(x) round(x, 3)))
+
+eis6_comp |> tt()
+```
+
+### Model 7 — Check & Handle Outliers
+
+Remove outliers (±3.29 MAD)
+
+```{r}
+# Identify outliers using robust z-scores
+outliers_mad <- check_outliers(df_info$polinfo_time, 
+                               method = "zscore_robust",
+                               threshold = 3.29)
+
+outlier_indices <- which(outliers_mad)
+```
+
+```{r}
+df_info_outlier <- df_info |> 
+  slice(-outlier_indices)
+```
+
+```{r}
+#| output: false
+hu7 <- brm(
+  data = df_info_outlier,
+  formula = f_hu1,
+  family = hurdle_lognormal(),
+  prior = priors_hu1,
+  sample_prior = "yes",
+  init = "random",
+  chains = chains,
+  iter = iter,
+  warmup = warmup,
+  seed = bayes_seed,
+  control = list(
+    adapt_delta = adapt_delta,
+    max_treedepth = max_treedepth
+  ),
+  file = here(model_dir, "hu7.rds")
+)
+```
+
+```{r}
+print(hu7)
+```
+
+#### Quantities of interest
+
+##### Initiation of Information Seeking
+
+```{r}
+iis6_comp <- avg_comparisons(hu7, 
+                             dpar = "hu", 
+                             variables = list(exp_condition = "pairwise")) |> 
+  as_tibble() |> 
+  select(Contrast = contrast,
+         Median = estimate,
+         "95% HDI Lower" = conf.low,
+         "95% HDI Upper" = conf.high
+  ) |> 
+  mutate(across(where(is.numeric), \(x) round(x, 3)))
+
+iis6_comp |> tt()
+```
+
+##### Extent of Information Seeking
+
+```{r}
+eis6_comp <- avg_comparisons(hu7, 
+                             dpar = "mu",
+                             comparison = function(hi, lo) exp(hi) - exp(lo),
+                             variables = list(exp_condition = "pairwise")) |> 
+  as_tibble() |> 
+  select(Contrast = contrast,
+         Median = estimate,
+         "95% HDI Lower" = conf.low,
+         "95% HDI Upper" = conf.high
+  ) |> 
+  mutate(across(where(is.numeric), \(x) round(x, 3)))
+
+eis6_comp |> tt()
+```
+
+
+
+
+
+
+
+
+
+
+
+

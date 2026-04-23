@@ -1,0 +1,713 @@
+---
+title: "Exploratory: Instagram Comments Text Analysis"
+description: "What types of comments do young people write, and what is the sentiment of the comments?" 
+
+format:
+  html:
+    theme: paper
+    shift-heading-level-by: 1
+    code-tools: true
+    code-fold: true
+    toc: true
+    toc-fold: false
+    toc-location: right
+    toc-depth: 4
+    toc-title: "Contents"
+
+# Portability settings
+embed-resources: true
+
+# Execution options 
+execute:
+  warning: false
+---
+
+```{r}
+#| include: false
+# set error messages to English
+Sys.setenv(LANG = "en")
+
+knitr::opts_chunk$set(
+  fig.align = "center", 
+  fig.retina = 3,
+  fig.width = 6, 
+  fig.height = (6 * 0.618),
+  out.width = "90%", 
+  collapse = FALSE
+)
+
+options(
+  digits = 4,
+  width = 300,
+  dplyr.summarise.inform = FALSE)
+```
+
+```{r}
+#| include: false
+#| warning: true
+#| message: true
+if (!require("groundhog", quietly = TRUE)) {
+  install.packages("groundhog")
+}
+library("groundhog")
+
+# use groundhog to install and load packages
+pkgs <- c("here",         # System path management
+          "tidyverse",    # ggplot, dplyr, and friends
+          "tinytable",    # Minimalist tables
+          "modelsummary", # Data and model summaries with tables and plots
+          "marginaleffects", # Model-based predictions, comparisons, and more marginalia
+          "ellmer",       # Interact with LLM APIs in R
+          "tidyprompt",   # Nice way to prompt LLMs 
+          "stringr",      # Additional string operations
+          "tidytext",     # Text Mining using 'dplyr', 'ggplot2', and Other Tidy Tools
+          "ggwordcloud",  # Wordclouds in ggplot2
+          "ggdist",       # Additional plot elements
+          "ggrain",       # For fancy raincloud plots
+          "GGally",       # ggpairs and other ggplot2 friends
+          "ggsignif",     # Add significance to figures
+          "patchwork",    # Combine multiple ggplots
+          "showtext"      # Additional fonts for plots etc
+          )
+
+groundhog.library(pkgs, "2026-01-01")
+```
+
+```{r}
+#| include: false
+
+showtext_auto()
+showtext_opts(dpi = 600)
+
+font_add_google("Public Sans", "Public Sans")
+font_add_google("Public Sans", "Public Sans Light", regular.wt = 300)
+font_add_google("Public Sans", "Public Sans Semibold", regular.wt = 600)
+
+# Custom ggplot theme
+theme_nice <- function() {
+  # General text family and base size
+  theme_minimal(base_family = "Public Sans", base_size = 14) +
+    theme(
+      # Remove minor grid lines for cleaner look
+      panel.grid.minor = element_blank(),
+      # Customize major grid lines color
+      panel.grid.major = element_blank(),
+      # Plot title: bold and custom relative size
+      plot.title = element_text(family = "Public Sans", face = "bold", size = rel(1.1), margin = margin(b = 10)),
+      # Subtitle and caption: lighter weight 
+      plot.subtitle = element_text(family = "Public Sans Light", face = "plain"),
+      plot.caption = element_text(family = "Public Sans Light", face = "plain"),
+      # Axis text: Relative size
+      axis.text = element_text(size = rel(0.9)),
+      # Axis titles: Semibold and custom relative size
+      axis.title = element_text(family = "Public Sans Semibold", size = rel(0.9)),
+      axis.title.x = element_text(hjust = 0.5),
+      axis.title.y = element_text(hjust = 0.5),
+      # Axis lines
+      axis.line = element_line(color = "grey25", linewidth = 0.8),
+      # Facet labels: bold text on grey background
+      strip.text = element_text(
+        family = "Public Sans Semibold", face = "plain",
+        size = rel(1),
+        hjust = 0.5
+      ),
+      strip.background = element_rect(fill = "grey95", color = "grey25", linewidth = 0.8), 
+      # Legend styling: compact and top-positioned
+      legend.title = element_text(family = "Public Sans Semibold", size = rel(0.8)),
+      legend.text = element_text(size = rel(0.8)),
+      legend.position = "top",
+      legend.justification = "center",
+      legend.title.position = "left",
+      legend.margin = margin(l = 0, t = 0)
+    )
+}
+
+
+theme_set(theme_nice())
+update_geom_defaults("text", list(family = "Public Sans"))
+update_geom_defaults("label", list(family = "Public Sans"))
+```
+
+```{r}
+#| include: false
+data_dir <- here("01_data")
+data_analysis_dir <- here("01_data", "analysis")
+table_dir <- here("02_output", "tables", "exploratory")
+llm_dir <- here("02_output", "LLM")
+figure_dir <- here("02_output", "figures", "exploratory")
+
+dir.create(data_analysis_dir, recursive = TRUE, showWarnings = TRUE)
+dir.create(table_dir, recursive = TRUE, showWarnings = TRUE)
+dir.create(figure_dir, recursive = TRUE, showWarnings = TRUE)
+dir.create(llm_dir, recursive = TRUE, showWarnings = TRUE)
+```
+
+```{r}
+load(here(data_dir, "clean", "df_wide.RData"))
+load(here(data_dir, "clean", "df_long.RData"))
+```
+
+## Quick Look at Data
+
+```{r}
+df_wide |> 
+  select(exp_condition, exp_comment) |> 
+  head(10) |> 
+  tt()
+```
+
+## Wordclouds
+
+#### Prepare the Data
+
+```{r}
+# Tokenize comments
+comment_words_raw <- df_wide |>
+  select(id, exp_condition, exp_comment) |>
+  filter(!is.na(exp_comment), exp_comment != "") |>
+  unnest_tokens(word, exp_comment)
+
+# Expanded custom stop words
+custom_stop <- tibble(word = c(
+  # Meta-words about the task
+  "comment", "post", "instagram", "share", "write",
+  
+  # Meta-responses (people saying they wouldn't comment)
+  "no", "not", "nothing", "would", "wouldn't", "wouldn’t", "idk",
+  
+  # Contractions 
+  "it's", "i'm", "don't", "dont", "can't", "that's", "i've", "isn't",
+  "didn't", "doesn't", "haven't", "won't", "aren't", "wasn't",
+  "you're", "they're", "we're", "i'll", "there's", "here's",
+  "it’s", "i’m", "don’t", "can’t", "that’s", "i’ve", "isn’t",
+  "didn’t", "doesn’t", "haven’t", "won’t", "aren’t", "wasn’t", "i’d",  
+  "you’re", "they’re", "we’re", "i’ll", "there’s", "here’s", "let’s" 
+))
+
+# Clean and prepare words for wordcloud
+comments_text <- comment_words_raw |>
+  anti_join(stop_words, by = "word") |>
+  anti_join(custom_stop, by = "word") |>
+  filter(
+    str_length(word) >= 3,
+    !str_detect(word, "^\\d+$"),
+    !str_detect(word, "[''']")
+  ) |>
+  count(exp_condition, word, sort = TRUE) |>
+  group_by(exp_condition) |>
+  slice_max(n, n = 75) |>
+  ungroup()
+
+# Check final counts
+comments_text |> 
+  count(exp_condition)
+
+# Preview top words per condition
+comments_text |>
+  group_by(exp_condition) |>
+  slice_head(n = 15) |> 
+  tt()
+```
+
+```{r}
+#| fig-height: 4
+#| fig-width: 11
+#| fig-dpi: 600
+#| fig-showtext: TRUE
+
+comments_text |>  
+  ggplot(aes(label = word, size = n, color = n)) +
+  geom_text_wordcloud_area(
+    rm_outside = TRUE,
+    eccentricity = 0.65
+  ) +
+  scale_size_area(max_size = 20) +
+  scale_color_gradientn(colours = c("#313695", "#4575b4", "#74add1", "#a50026", "#d73027", "#f46d43")) +
+  facet_wrap(~exp_condition, labeller = as_labeller(c(
+    anxiety = "Anxiety",
+    hope = "Hope", 
+    control = "Control"))
+  ) +
+  theme(
+    strip.background = element_blank(),
+    strip.text = element_text(size = 18)
+  )
+
+ggsave(here(figure_dir, "comments_wordcloud.svg"),
+       height = 4,
+       width = 11,
+       dpi = 600)
+```
+
+## Sentiment Analysis
+
+### Interact with LLM
+
+::: {.callout-important}
+## Don't forget to remove own API code before sharing the code. 
+:::
+
+```{r}
+Sys.setenv(ANTHROPIC_API_KEY = "PASTE YOUR API CODE")
+```
+
+```{r}
+chat_sentiment <- chat_anthropic(
+  system_prompt = "You are a sentiment analyst. Rate each comment objectively using the exact scale provided.",
+  model = "claude-sonnet-4-5-20250929",
+  echo = "none",
+  api_args = list(
+    temperature = 0,      # Deterministic output
+    max_tokens = 10       # We only need 1-2 tokens (a number or "NA")
+  )
+)
+```
+
+```{r}
+# Create tidyprompt provider
+provider_sentiment <- llm_provider_ellmer(chat_sentiment)
+```
+
+```{r}
+# Define the prompt
+prompt_sentiment <- 'How negative or positive is this comment on a 1 to 7 scale? Answer only with a number, with 1 being "very negative", 4 being "neutral", and 7 being "very positive." If the comment is nonsensical or a non-response (e.g., "no", "none", "would not comment"), return 99. Here is the comment:'
+
+print(prompt_sentiment)
+```
+
+##### Quick test
+
+```{r}
+test_df <- tibble(
+  id = 1:5,
+  exp_comment = c(
+    "I am terrified and so sad :(",
+    "statistics show inflation has changed recently",
+    "there is always so much hope out there in the world!",
+    "glagalmgadn",
+    "no"
+  )
+)
+
+# Run sentiment analysis
+# test_df <- test_df |>
+#   mutate(
+#     sentiment = map_int(exp_comment, function(comment) {
+#       paste0(prompt_sentiment, "\n\n", comment) |>
+#         answer_as_integer(min = 1, max = 99) |>  # Force integer in valid range
+#         send_prompt(provider_sentiment, verbose = FALSE)
+#     }, .progress = TRUE)
+#   )
+```
+
+```{r}
+# test_df |> tt()
+```
+
+### Run the LLM Analysis
+
+```{r}
+comments_df <- df_wide |>
+  select(id, exp_comment)
+
+nrow(comments_df)
+```
+
+```{r}
+# comments_sentiment <- comments_df |>
+#   mutate(
+#     sentiment_score = map_int(exp_comment, function(comment) {
+#       paste0(prompt_sentiment, "\n\n", comment) |>
+#         answer_as_integer(min = 1, max = 99) |>  # Force integer in valid range
+#         send_prompt(provider_sentiment, verbose = FALSE)
+#     }, .progress = TRUE)
+#   )
+# 
+# save(comments_sentiment, file = here(llm_dir, "comments_sentiment.RData"))
+# write_csv(comments_sentiment, file = here(llm_dir, "comments_sentiment.csv"))
+```
+
+```{r}
+# If code above already ran, use this to load the dataframe and save some energy and money
+load(here(llm_dir, "comments_sentiment.RData"))
+```
+
+#### Visualise the Findings
+
+```{r}
+comments_sentiment <- comments_sentiment |>
+  mutate(
+    sentiment = case_when(
+      sentiment_score == 99 ~ NA_real_,
+      sentiment_score >= 1 & sentiment_score <= 7 ~ as.numeric(sentiment_score),
+      TRUE ~ NA_real_  # Catch any unexpected values
+    )
+  )
+```
+
+```{r}
+df_wide <- df_wide |>
+  left_join(
+    comments_sentiment |> select(id, exp_comment_sentiment = sentiment),
+    by = "id"
+  )
+```
+
+```{r}
+df_wide |> 
+  select(Treatment = exp_condition,
+         Sentiment = exp_comment_sentiment) |> 
+  datasummary_balance(~Treatment, 
+                      data = _)
+```
+
+```{r}
+df_wide |> 
+  select(Sentiment = exp_comment_sentiment,
+         "Anxiety - Hope" = anxiety_hope_dim,
+         Anxious = exp_check_anxious,
+         Angry = exp_check_angry,
+         Hopeful = exp_check_hopeful,
+         Happy = exp_check_happy,
+         Calm = exp_check_calm) |> 
+  datasummary_correlation(data = _)
+```
+
+```{r}
+scatter_function <- function(data, mapping, ...) {
+  ggplot(data = data, mapping = mapping) +
+    geom_hline(yintercept = 0, linetype = "dashed", color = "gray60") +
+    geom_point(color = "#c994c7", alpha = 0.3, size = 1) +
+    geom_smooth(method = "lm", color = "black", se = T, linewidth = 1.2, alpha = 0.5)
+}
+```
+
+```{r}
+#| warning: false
+#| message: false
+#| fig-height: 8.5
+#| fig-width: 12
+#| fig-dpi: 600
+#| fig-showtext: TRUE
+showtext_opts(dpi = 600)
+df_wide |> 
+  mutate(anxiety_hope_dim = anxiety_hope_dim*100) |> 
+  select(Sentiment = exp_comment_sentiment,
+         "A-H Dim " = anxiety_hope_dim,
+         Anxious = exp_check_anxious,
+         Angry = exp_check_angry,
+         Hopeful = exp_check_hopeful,
+         Happy = exp_check_happy,
+         Calm = exp_check_calm)|> 
+  ggpairs(
+    data = _,
+    # Lower Triangle: Scatterplot
+    lower = list(continuous = scatter_function),
+    # Upper Triangle: Correlations 
+    upper = list(continuous = wrap("cor", stars = TRUE, size = 5, color = "black", family = "Public Sans")),
+    # Diagonal: Density 
+    diag = list(continuous = wrap("densityDiag", fill = "#c994c7", color = "black"))
+  ) +
+  theme_nice() 
+
+ggsave(here(figure_dir, "sent_manip_corrs.png"),
+       height = 8.5,
+       width = 12,
+       dpi = 600)
+```
+
+```{r}
+#| fig-height: 4
+#| fig-width: 6
+#| fig-showtext: TRUE
+df_wide |> 
+  filter(!is.na(exp_comment_sentiment)) |> 
+  mutate(exp_condition = factor(exp_condition, levels = c("anxiety", "hope", "control"))) |> 
+  ggplot(aes(x = exp_condition, y = exp_comment_sentiment, fill = exp_condition, color = exp_condition)) +
+  geom_rain(
+    rain.side = "r",  
+    seed = 42,
+    point.args = list(alpha = 0.2, size = 0.8),  
+    boxplot.args = list(
+      outlier.shape = NA,
+      alpha = 0.7,
+      color = "black"  
+    ),
+    violin.args = list(alpha = 0.7)
+  ) +
+  geom_signif(
+    aes(x = exp_condition, y = exp_comment_sentiment),  
+    comparisons = list(
+      c("anxiety", "hope"), 
+      c("anxiety", "control"), 
+      c("hope", "control")
+    ),
+    map_signif_level = TRUE,
+    size = 0.8,
+    textsize = 4,
+    family = "Public Sans",
+    color = "black",
+    tip_length = 0,
+    step_increase = 0.12,
+    inherit.aes = FALSE
+  ) +
+  scale_fill_brewer(palette = "Dark2", direction = -1) +
+  scale_color_brewer(palette = "Dark2", direction = -1) +
+  scale_y_continuous(expand = expansion(mult = c(0.05, 0.15))) +
+  labs(
+    x = NULL,
+    y = "Sentiment",
+    title = "Sentiment by Experimental Condition"
+  ) +
+  theme_nice() +
+  theme(legend.position = "none") 
+
+ggsave(here(figure_dir, "sent_raincloud.svg"),
+       height = 4,
+       width = 6,
+       dpi = 600)
+```
+
+```{r}
+sent1 <- lm(exp_comment_sentiment ~ exp_condition, data = df_wide)
+
+sent1_comp <- avg_comparisons(sent1, 
+                              variables = list(exp_condition = "pairwise")) |> 
+  as_tibble() |> 
+  select(Contrast = contrast,
+         Estimate = estimate,
+         SE = std.error,
+         `p` = p.value,
+         "95% CI Lower" = conf.low,
+         "95% CI Upper" = conf.high
+         ) |> 
+  mutate(across(where(is.numeric), \(x) round(x, 3)))
+
+sent1_comp |> tt()
+```
+
+## Discrete Emotion Analysis
+
+```{r}
+# Create new chat object for emotion coding
+chat_emotion <- chat_anthropic(
+  system_prompt = "You are an emotion analyst. Classify each comment objectively using the coding provided.",
+  model = "claude-sonnet-4-20250514",
+  echo = "none",
+  api_args = list(
+    temperature = 0,
+    max_tokens = 10
+  )
+)
+
+# Create provider
+provider_emotion <- llm_provider_ellmer(chat_emotion)
+
+# Define emotion prompt
+prompt_emotion <- 'Which of these 5 emotions – angry, anxious, hopeful, happy, calm – best represents the general emotion expressed in the following comment? Answer only with a number: 1 if angry, 2 if anxious, 3 if hopeful, 4 if happy, 5 if calm. If the comment is nonsensical or a non-response (e.g., "no", "none", "would not comment"), return 99. Here is the comment:'
+
+print(prompt_emotion)
+```
+
+##### Quick test
+
+```{r}
+# test_df <- test_df |>
+#   mutate(
+#     emotion_raw = map_int(exp_comment, function(comment) {
+#       paste0(prompt_emotion, "\n\n", comment) |>
+#         answer_as_integer(min = 1, max = 99) |>
+#         send_prompt(provider_emotion, verbose = FALSE)
+#     }, .progress = TRUE)
+#   )
+```
+
+```{r}
+# Recode to factor with labels
+# test_df <- test_df |>
+#   mutate(
+#     emotion = case_when(
+#       emotion_raw == 1 ~ "angry",
+#       emotion_raw == 2 ~ "anxious",
+#       emotion_raw == 3 ~ "hopeful",
+#       emotion_raw == 4 ~ "happy",
+#       emotion_raw == 5 ~ "calm",
+#       emotion_raw == 99 ~ NA_character_,
+#       TRUE ~ NA_character_
+#     ),
+#     emotion = factor(emotion, levels = c("angry", "anxious", "hopeful", "happy", "calm"))
+#   )
+# 
+# test_df |>
+#   select(exp_comment, emotion_raw, emotion) |> 
+#   tt()
+```
+
+### Run the LLM Analysis
+
+```{r}
+# # Run emotion coding on data
+# comments_emotion <- comments_df |>
+#   mutate(
+#     emotion_raw = map_int(exp_comment, function(comment) {
+#       paste0(prompt_emotion, "\n\n", comment) |>
+#         answer_as_integer(min = 1, max = 99) |>
+#         send_prompt(provider_emotion, verbose = FALSE)
+#     }, .progress = TRUE)
+#   )
+# 
+# # Save raw results
+# save(comments_emotion, file = here(llm_dir, "comments_emotion.RData"))
+# write_csv(comments_emotion, file = here(llm_dir, "comments_emotion.csv"))
+```
+
+```{r}
+# If code above already ran, use this to load the dataframe and save some energy and money
+load(here(llm_dir, "comments_emotion.RData"))
+```
+
+```{r}
+# Recode to labeled factor
+comments_emotion <- comments_emotion |>
+  mutate(
+    emotion = case_when(
+      emotion_raw == 1 ~ "angry",
+      emotion_raw == 2 ~ "anxious",
+      emotion_raw == 3 ~ "hopeful",
+      emotion_raw == 4 ~ "happy",
+      emotion_raw == 5 ~ "calm",
+      emotion_raw == 99 ~ NA_character_,
+      TRUE ~ NA_character_
+    ),
+    emotion = factor(emotion, levels = c("angry", "anxious", "hopeful", "happy", "calm"))
+  )
+
+comments_emotion |>
+  count(emotion_raw, emotion) |> tt()
+```
+
+```{r}
+df_wide <- df_wide |>
+  left_join(
+    comments_emotion |> select(id, exp_comment_emotion = emotion),
+    by = "id"
+  )
+```
+
+#### Visualise the Findings
+
+```{r}
+emotion_crosstab <- df_wide |> 
+  select(Treatment = exp_condition,
+         Emotion = exp_comment_emotion) |> 
+  datasummary_crosstab(Emotion~Treatment, 
+                       data = _)
+
+emotion_crosstab 
+
+emotion_crosstab |> 
+  save_tt(here(table_dir, "emotion_crosstab.docx"), overwrite = T)
+```
+
+```{r}
+#| fig-height: 5
+#| fig-width: 8
+#| fig-dpi: 600
+#| fig-showtext: TRUE
+# Define emotion colors 
+emotion_colors <- c(
+  "angry" = "#e07a7a",      
+  "anxious" = "#f4a582",  
+  "hopeful" = "#a8ddb5",    
+  "happy" = "#ffd97d",     
+  "calm" = "#7eb3d4"        
+)
+
+# Prepare the data
+emotion_plot_data <- df_wide |>
+  filter(!is.na(exp_comment_emotion)) |>
+  count(exp_condition, exp_comment_emotion) |>
+  group_by(exp_condition) |>
+  mutate(
+    total = sum(n),
+    pct = n / total * 100,
+    label = if_else(pct >= 1, sprintf("%.1f%%", pct), "") 
+  ) |>
+  ungroup()
+
+emotion_plot_data |> ggplot(
+  aes(x = exp_condition, y = pct, fill = exp_comment_emotion)
+  ) +
+  geom_col(position = "stack", width = 0.7, color = "grey20") +
+  geom_text(
+    aes(label = label),
+    position = position_stack(vjust = 0.5),
+    size = 3.5,
+    fontface = "plain",
+    family = "Public Sans Semibold",
+    color = "black"
+  ) +
+  scale_fill_manual(
+    values = emotion_colors,
+    name = "Emotion",
+    labels = c("Angry", "Anxious", "Hopeful", "Happy", "Calm")
+  ) +
+  scale_x_discrete(
+    labels = c("Control", "Anxiety", "Hope")
+  ) +
+  scale_y_continuous(
+    labels = scales::percent_format(scale = 1),
+    expand = c(0, 0)
+  ) +
+  labs(
+    x = "Experimental Condition",
+    y = NULL
+  ) +
+  theme(axis.line.x = element_blank(),
+        axis.line.y = element_blank(),
+        axis.text.y = element_blank()) +
+  guides(fill = guide_legend(reverse=T))
+
+ggsave(here(figure_dir, "discrete_emotion_dist.svg"),
+       height = 5,
+       width = 8,
+       dpi = 600)
+```
+
+## Save the Data with Sentiment & Emotion Codings
+
+### Wide data
+
+```{r}
+df_wide <- df_wide |> 
+  select(id:exp_comment, 
+         exp_comment_sentiment, exp_comment_emotion,
+         exp_reaction:post_attention1)
+```
+
+```{r}
+save(df_wide, file = here(data_analysis_dir, "df_wide.RData"))
+write_csv(df_wide, file = here(data_analysis_dir, "df_wide.csv"))
+```
+
+### Long data
+
+```{r}
+df_long <- df_long |> 
+  left_join(df_wide |> select(id, exp_comment_sentiment, exp_comment_emotion), by = "id") |> 
+  select(id:exp_comment,
+         exp_comment_sentiment, exp_comment_emotion,
+         exp_reaction:post_attention1)
+```
+
+```{r}
+save(df_long, file = here(data_analysis_dir, "df_long.RData"))
+write_csv(df_long, file = here(data_analysis_dir, "df_long.csv"))
+```
+
+
+
+
+
+
+

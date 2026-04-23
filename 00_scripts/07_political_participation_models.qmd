@@ -1,0 +1,996 @@
+---
+title: "RQ2.1 Political Participation Models"
+description: "How do feelings about the future affect young people's willingness to participate politically?" 
+
+format:
+  html:
+    theme: paper
+    shift-heading-level-by: 1
+    code-tools: true
+    code-fold: true
+    toc: true
+    toc-fold: false
+    toc-location: right
+    toc-depth: 4
+    toc-title: "Contents"
+
+# Portability settings
+embed-resources: true
+
+# Execution options 
+execute:
+  warning: false
+---
+
+```{r}
+#| include: false
+# set error messages to English
+Sys.setenv(LANG = "en")
+
+knitr::opts_chunk$set(
+  fig.align = "center", 
+  fig.retina = 3,
+  fig.width = 6, 
+  fig.height = (6 * 0.618),
+  out.width = "90%", 
+  collapse = FALSE
+)
+
+options(
+  digits = 4,
+  width = 300,
+  dplyr.summarise.inform = FALSE)
+```
+
+```{r}
+#| include: false
+#| warning: true
+#| message: true
+if (!require("groundhog", quietly = TRUE)) {
+  install.packages("groundhog")
+}
+library("groundhog")
+
+# use groundhog to install and load packages
+pkgs <- c("here",         # System path management
+          "tidyverse",    # ggplot, dplyr, and friends
+          "datawizard",   # Data preparation tools
+          "brms",         # Bayesian regression modelling in Stan
+          "marginaleffects", # Model-based predictions, comparisons, and more marginalia
+          "tidybayes",    # Tools to work with Bayesian models 
+          "tinytable",    # Minimalist tables
+          "modelsummary", # Data and model summaries with tables and plots
+          "ggdist",       # Additional plot elements
+          # "ggrain",       # For fancy raincloud plots
+          # "GGally",       # ggpairs and other ggplot2 friends
+          # "ggsignif",     # Add significance to figures
+          "patchwork",    # Combine multiple ggplots
+          "showtext"      # Additional fonts for plots etc
+          )
+
+groundhog.library(pkgs, "2026-01-01")
+```
+
+```{r}
+#| include: false
+# I use the faster cmdstanr backend for Stan in the place of rstan
+# to do so install the cmdstanr package first: https://mc-stan.org/cmdstanr/
+# Then run cmdstanr::install_cmdstan() to install cmdstan on your computer.
+# RTools must be installed. For more info see 
+# https://mc-stan.org/cmdstanr/articles/cmdstanr.html#introduction
+
+# install.packages("cmdstanr", repos = c('https://stan-dev.r-universe.dev', getOption("repos")))
+# cmdstanr::install_cmdstan()
+
+options(mc.cores = 4,  
+        brms.backend = "cmdstanr")
+```
+
+```{r}
+#| include: false
+
+showtext_auto()
+showtext_opts(dpi = 600)
+
+font_add_google("Public Sans", "Public Sans")
+font_add_google("Public Sans", "Public Sans Light", regular.wt = 300)
+font_add_google("Public Sans", "Public Sans Semibold", regular.wt = 600)
+
+# Custom ggplot theme
+theme_nice <- function() {
+  # General text family and base size
+  theme_minimal(base_family = "Public Sans", base_size = 14) +
+    theme(
+      # Remove minor grid lines for cleaner look
+      panel.grid.minor = element_blank(),
+      # Customize major grid lines color
+      panel.grid.major = element_blank(),
+      # Plot title: bold and custom relative size
+      plot.title = element_text(family = "Public Sans", face = "bold", size = rel(1.1), margin = margin(b = 10)),
+      # Subtitle and caption: lighter weight 
+      plot.subtitle = element_text(family = "Public Sans Light", face = "plain"),
+      plot.caption = element_text(family = "Public Sans Light", face = "plain"),
+      # Axis text: Relative size
+      axis.text = element_text(size = rel(0.9)),
+      # Axis titles: Semibold and custom relative size
+      axis.title = element_text(family = "Public Sans Semibold", size = rel(0.9)),
+      axis.title.x = element_text(hjust = 0.5),
+      axis.title.y = element_text(hjust = 0.5),
+      # Axis lines
+      axis.line = element_line(color = "grey25", linewidth = 0.8),
+      # Facet labels: bold text on grey background
+      strip.text = element_text(
+        family = "Public Sans Semibold", face = "plain",
+        size = rel(1),
+        hjust = 0.5
+      ),
+      strip.background = element_rect(fill = "grey95", color = "grey25", linewidth = 0.8), 
+      # Legend styling: compact and top-positioned
+      legend.title = element_text(family = "Public Sans Semibold", size = rel(0.8)),
+      legend.text = element_text(size = rel(0.8)),
+      legend.position = "top",
+      legend.justification = "center",
+      legend.title.position = "left",
+      legend.margin = margin(l = 0, t = 0)
+    )
+}
+
+
+theme_set(theme_nice())
+update_geom_defaults("text", list(family = "Public Sans"))
+update_geom_defaults("label", list(family = "Public Sans"))
+```
+
+```{r}
+#| include: false
+data_dir <- here("01_data")
+table_dir <- here("02_output", "tables", "RQ2")
+figure_dir <- here("02_output", "figures", "RQ2")
+model_dir <- here("02_output", "models", "RQ2")
+
+dir.create(table_dir, recursive = TRUE, showWarnings = TRUE)
+dir.create(figure_dir, recursive = TRUE, showWarnings = TRUE)
+dir.create(model_dir, recursive = TRUE, showWarnings = TRUE)
+```
+
+```{r}
+load(here(data_dir, "analysis", "df_wide.RData"))
+df <- df_wide 
+rm(df_wide)
+```
+
+## Main Models to Estimate the ATEs
+
+```{r}
+# brms settings
+bayes_seed <- 42
+chains <- 4
+iter <- 4000
+warmup <- floor(iter/2)
+adapt_delta <- 0.90
+max_treedepth <- 10
+```
+
+```{r}
+# marginaleffects settings
+options(marginaleffects_posterior_interval = "hdi")
+options(marginaleffects_posterior_center = stats::median)
+```
+
+### Model 1 — Primary Model
+
+```{r}
+f_m1 <- bf(exp_polpart_pomp ~ exp_condition) 
+
+priors_m1 <- c(
+  prior(normal(0.5, 0.5), class = "Intercept"),
+  prior(normal(0, 0.5), class = "b"),
+  prior(exponential(4), class = "sigma"))
+```
+
+```{r}
+#| output: false
+m1 <- brm(
+  data = df,
+  family = gaussian(),
+  formula = f_m1,
+  prior = priors_m1,
+  sample_prior = "yes",
+  init = "random",
+  chains = chains,
+  iter = iter,
+  warmup = warmup,
+  seed = bayes_seed,
+  control = list(
+    adapt_delta = adapt_delta,
+    max_treedepth = max_treedepth),
+  file = here(model_dir, "m1.rds")
+  )
+```
+
+```{r}
+print(m1)
+```
+
+#### Quantities of interest
+
+```{r}
+m1_pred_avg <- avg_predictions(m1) |> 
+  as_tibble() |> 
+  select(Median = estimate,
+         "95% HDI Lower" = conf.low,
+         "95% HDI Upper" = conf.high
+         ) 
+
+m1_pred_avg |> tt()
+```
+
+```{r}
+m1_pred <- avg_predictions(m1, by = "exp_condition") |> 
+  as_tibble() |> 
+  select(Condition = exp_condition,
+         Median = estimate,
+         "95% HDI Lower" = conf.low,
+         "95% HDI Upper" = conf.high
+         ) 
+
+m1_pred |> tt()
+```
+
+```{r}
+m1_comp <- avg_comparisons(m1, variables = list(exp_condition = "pairwise")) |> 
+  as_tibble() |> 
+  select(Contrast = contrast,
+         Median = estimate,
+         "95% HDI Lower" = conf.low,
+         "95% HDI Upper" = conf.high
+         ) |> 
+  mutate(across(where(is.numeric), \(x) round(x, 3)))
+
+m1_comp |> tt()
+```
+
+#### Frequentist comparison
+
+```{r}
+f1 <- lm(exp_polpart_pomp ~ exp_condition, data = df)
+
+f1_comp <- avg_comparisons(f1, 
+                           variables = list(exp_condition = "pairwise")) |> 
+  as_tibble() |> 
+  select(Contrast = contrast,
+         Estimate = estimate,
+         SE = std.error,
+         `p` = p.value,
+         "95% CI Lower" = conf.low,
+         "95% CI Upper" = conf.high
+         ) |> 
+  mutate(across(where(is.numeric), \(x) round(x, 3)))
+
+f1_comp |> tt()
+```
+
+### Model 2 — Interaction with Age Group
+
+```{r}
+f_m2 <- bf(exp_polpart_pomp ~ exp_condition * age_group) 
+```
+
+```{r}
+#| output: false
+m2 <- brm(
+  data = df,
+  family = gaussian(),
+  formula = f_m2,
+  prior = priors_m1,
+  sample_prior = "yes",
+  init = "random",
+  chains = chains,
+  iter = iter,
+  warmup = warmup,
+  seed = bayes_seed,
+  control = list(
+    adapt_delta = adapt_delta,
+    max_treedepth = max_treedepth),
+  file = here(model_dir, "m2.rds")
+  )
+```
+
+```{r}
+summary(m2)
+```
+
+#### Quantities of interest
+
+```{r}
+m2_comp <- avg_comparisons(m2, 
+                           variables = list(exp_condition = "pairwise"), 
+                           by = "age_group") |> 
+  as_tibble() |> 
+  select(Contrast = contrast,
+         `Age Group` = age_group,
+         Median = estimate,
+         "95% HDI Lower" = conf.low,
+         "95% HDI Upper" = conf.high
+         ) |> 
+  mutate(across(where(is.numeric), \(x) round(x, 3)))
+
+m2_comp |> tt()
+```
+
+#### Frequentist comparison
+
+```{r}
+f2 <- lm(exp_polpart_pomp ~ exp_condition * age_group, data = df)
+
+f2_comp <- avg_comparisons(f2, 
+                           variables = list(exp_condition = "pairwise"), 
+                           by = "age_group") |> 
+  as_tibble() |> 
+  select(Contrast = contrast,
+         `Age Group` = age_group,
+         Estimate = estimate,
+         SE = std.error,
+         `p` = p.value,
+         "95% CI Lower" = conf.low,
+         "95% CI Upper" = conf.high
+         ) |> 
+  mutate(across(where(is.numeric), \(x) round(x, 3)))
+
+f2_comp |> tt()
+```
+
+### Model 3 — Interaction with Gender
+
+```{r}
+f_m3 <- bf(exp_polpart_pomp ~ exp_condition * gender) 
+```
+
+```{r}
+#| output: false
+m3 <- brm(
+  data = df,
+  family = gaussian(),
+  formula = f_m3,
+  prior = priors_m1,
+  sample_prior = "yes",
+  init = "random",
+  chains = chains,
+  iter = iter,
+  warmup = warmup,
+  seed = bayes_seed,
+  control = list(
+    adapt_delta = adapt_delta,
+    max_treedepth = max_treedepth),
+  file = here(model_dir, "m3.rds")
+)
+```
+
+```{r}
+summary(m3)
+```
+
+#### Quantities of interest
+
+```{r}
+m3_comp <- avg_comparisons(m3, 
+                           variables = list(exp_condition = "pairwise"), 
+                           by = "gender") |> 
+  as_tibble() |> 
+  select(Contrast = contrast,
+         Gender = gender,
+         Median = estimate,
+         "95% HDI Lower" = conf.low,
+         "95% HDI Upper" = conf.high
+  ) |> 
+  mutate(across(where(is.numeric), \(x) round(x, 3)))
+
+m3_comp |> tt()
+```
+
+#### Frequentist comparison
+
+```{r}
+f3 <- lm(exp_polpart_pomp ~ exp_condition * gender, data = df)
+
+f3_comp <- avg_comparisons(f3, 
+                           variables = list(exp_condition = "pairwise"), 
+                           by = "gender") |> 
+  as_tibble() |> 
+  select(Contrast = contrast,
+         Gender = gender,
+         Estimate = estimate,
+         SE = std.error,
+         `p` = p.value,
+         "95% CI Lower" = conf.low,
+         "95% CI Upper" = conf.high
+         ) |> 
+  mutate(across(where(is.numeric), \(x) round(x, 3)))
+
+f3_comp |> tt()
+```
+
+## Supplementary Models
+
+### Model 4 — Control for Demograpics & Pre-Measures
+
+```{r}
+df_control <- df |> 
+  mutate(ideology = left_right / 10,
+         education_level = coalesce(education_level, education)) |> 
+  droplevels()
+```
+
+```{r}
+f_m4 <- bf(exp_polpart_pomp ~ exp_condition + scale(age) + gender + ideology + education_level + living_standard) 
+```
+
+```{r}
+#| output: false
+m4 <- brm(
+  data = df_control,
+  family = gaussian(),
+  formula = f_m4,
+  prior = priors_m1,
+  sample_prior = "yes",
+  init = "random",
+  chains = chains,
+  iter = iter,
+  warmup = warmup,
+  seed = bayes_seed,
+  control = list(
+    adapt_delta = adapt_delta,
+    max_treedepth = max_treedepth),
+  file = here(model_dir, "m4.rds")
+)
+```
+
+```{r}
+print(m4)
+```
+
+#### Quantities of interest
+
+```{r}
+m4_comp <- avg_comparisons(m4, variables = list(exp_condition = "pairwise")) |> 
+  as_tibble() |> 
+  select(Contrast = contrast,
+         Median = estimate,
+         "95% HDI Lower" = conf.low,
+         "95% HDI Upper" = conf.high
+  ) |> 
+  mutate(across(where(is.numeric), \(x) round(x, 3)))
+
+m4_comp |> tt()
+```
+
+#### Frequentist comparison
+
+```{r}
+f4 <- lm(exp_polpart_pomp ~ exp_condition + scale(age) + gender + ideology + education_level + living_standard,
+         data = df_control)
+
+f4_comp <- avg_comparisons(f4, 
+                           variables = list(exp_condition = "pairwise")) |> 
+  as_tibble() |> 
+  select(Contrast = contrast,
+         Estimate = estimate,
+         SE = std.error,
+         `p` = p.value,
+         "95% CI Lower" = conf.low,
+         "95% CI Upper" = conf.high
+         ) |> 
+  mutate(across(where(is.numeric), \(x) round(x, 3)))
+
+f4_comp |> tt()
+```
+
+### Model 5 — Pre-Registered Sample Only
+
+Participants aged 16-21 or participants who were recontacted:
+```{r}
+df_prereg <- df |> 
+  filter(age_group == "16-21 years" | sample_type == "recontact")
+```
+
+```{r}
+#| output: false
+m5 <- brm(
+  data = df_prereg,
+  family = gaussian(),
+  formula = f_m1,
+  prior = priors_m1,
+  sample_prior = "yes",
+  init = "random",
+  chains = chains,
+  iter = iter,
+  warmup = warmup,
+  seed = bayes_seed,
+  control = list(
+    adapt_delta = adapt_delta,
+    max_treedepth = max_treedepth),
+  file = here(model_dir, "m5.rds")
+  )
+```
+
+```{r}
+summary(m5)
+```
+
+#### Quantities of interest
+
+```{r}
+m5_comp <- avg_comparisons(m5, 
+                           variables = list(exp_condition = "pairwise")) |> 
+  as_tibble() |> 
+  select(Contrast = contrast,
+         Median = estimate,
+         "95% HDI Lower" = conf.low,
+         "95% HDI Upper" = conf.high
+         ) |> 
+  mutate(across(where(is.numeric), \(x) round(x, 3)))
+
+m5_comp |> tt()
+```
+
+#### Frequentist comparison
+
+```{r}
+f5 <- lm(exp_polpart_pomp ~ exp_condition, data = df_prereg)
+
+f5_comp <- avg_comparisons(f5, 
+                           variables = list(exp_condition = "pairwise")) |> 
+  as_tibble() |> 
+  select(Contrast = contrast,
+         Estimate = estimate,
+         SE = std.error,
+         `p` = p.value,
+         "95% CI Lower" = conf.low,
+         "95% CI Upper" = conf.high
+         ) |> 
+  mutate(across(where(is.numeric), \(x) round(x, 3)))
+
+f5_comp |> tt()
+```
+
+### Model 6 — Attentive Participants Only 
+
+Attentive participants:
+```{r}
+df_att <- df |> 
+  filter(exp_attention == "Costs of living",
+         pre_attention1 == "passed",
+         pre_attention2 == "passed",
+         pre_attention3 == "passed",
+         post_attention1 == "passed")
+
+print(paste("Excluded N =", nrow(df) - nrow(df_att), "participants who failed any single one of the pre or post attention checks."))
+```
+
+```{r}
+#| output: false
+m6 <- brm(
+  data = df_att,
+  family = gaussian(),
+  formula = f_m1,
+  prior = priors_m1,
+  sample_prior = "yes",
+  init = "random",
+  chains = chains,
+  iter = iter,
+  warmup = warmup,
+  seed = bayes_seed,
+  control = list(
+    adapt_delta = adapt_delta,
+    max_treedepth = max_treedepth),
+  file = here(model_dir, "m6.rds")
+)
+```
+
+```{r}
+summary(m6)
+```
+
+#### Quantities of interest
+
+```{r}
+m6_comp <- avg_comparisons(m6, 
+                           variables = list(exp_condition = "pairwise")) |> 
+  as_tibble() |> 
+  select(Contrast = contrast,
+         Median = estimate,
+         "95% HDI Lower" = conf.low,
+         "95% HDI Upper" = conf.high
+  ) |> 
+  mutate(across(where(is.numeric), \(x) round(x, 3)))
+
+m6_comp |> tt()
+```
+
+#### Frequentist comparison
+
+```{r}
+f6 <- lm(exp_polpart_pomp ~ exp_condition, data = df_att)
+
+f6_comp <- avg_comparisons(f6, 
+                           variables = list(exp_condition = "pairwise")) |> 
+  as_tibble() |> 
+  select(Contrast = contrast,
+         Estimate = estimate,
+         SE = std.error,
+         `p` = p.value,
+         "95% CI Lower" = conf.low,
+         "95% CI Upper" = conf.high
+         ) |> 
+  mutate(across(where(is.numeric), \(x) round(x, 3)))
+
+f6_comp |> tt()
+```
+
+### Model 7 — Item-level differences
+
+```{r}
+df_polpart_items <- df |> 
+  select(id, exp_condition, 
+         exp_polpart_explain_vote,
+         exp_polpart_share_story,
+         exp_polpart_send_video,
+         exp_polpart_discuss_online,
+         exp_polpart_protest) |> 
+  pivot_longer(
+    cols = exp_polpart_explain_vote:exp_polpart_protest,
+    names_to = "item",
+    values_to = "response"
+  ) |> 
+  mutate(
+    response_pomp = (response - 1) / (5 - 1),  # Convert 1-5 to 0-1
+    item = factor(item, 
+                  levels = c("exp_polpart_explain_vote",
+                             "exp_polpart_share_story",
+                             "exp_polpart_send_video",
+                             "exp_polpart_discuss_online",
+                             "exp_polpart_protest"
+                            ),
+                  labels = c("ExpVote", "ShareStory", "SendVideo", 
+                             "DiscOnl", "Protest"))
+  )
+```
+
+```{r}
+f_m7 <- bf(response_pomp ~ exp_condition * item + (1 | id))
+
+priors_m7 <- c(
+  prior(normal(0.5, 0.5), class = "Intercept"),
+  prior(normal(0, 0.5), class = "b"),
+  prior(exponential(4), class = "sigma"),
+  prior(exponential(2), class = "sd")
+)
+```
+
+```{r}
+#| output: false
+m7 <- brm(
+  data = df_polpart_items,
+  family = gaussian(),
+  formula = f_m7,
+  prior = priors_m7,
+  # sample_prior = "yes",
+  init = "random",
+  chains = chains,
+  iter = iter,
+  warmup = warmup,
+  seed = bayes_seed,
+  control = list(
+    adapt_delta = adapt_delta,
+    max_treedepth = max_treedepth
+  ),
+  file = here(model_dir, "m7.rds")
+)
+```
+
+#### Quantities of interest
+
+```{r}
+# Get posterior predictions 
+m7.draws <- expand.grid(
+  exp_condition = c("control", "anxiety", "hope"),
+  item = levels(df_polpart_items$item)) |>
+  add_epred_draws(m7, re_formula = NA, ndraws = 4000) |>
+  ungroup()
+
+# Compute item-level pairwise contrasts 
+m7.item_contrasts <- m7.draws |>
+  select(exp_condition, item, .draw, .epred) |>
+  pivot_wider(names_from = exp_condition, values_from = .epred) |>
+  mutate(
+    `Anxiety − Control` = anxiety - control,
+    `Hope − Control` = hope - control,
+    `Anxiety - Hope` = anxiety - hope
+  ) |>
+  pivot_longer(
+    cols = c(`Anxiety − Control`, `Hope − Control`, `Anxiety - Hope`),
+    names_to = "contrast",
+    values_to = "estimate"
+  ) |>
+  mutate(type = "Item-level")
+
+# Compute pairwise comparisons across items
+m7.avg_contrasts <- m7.item_contrasts |>
+  group_by(contrast, .draw) |>
+  summarise(estimate = mean(estimate), .groups = "drop") |>
+  mutate(
+    item = "Overall ATE",
+    type = "Overall"
+  )
+
+# Combine draws
+m7.contrasts <- bind_rows(m7.item_contrasts, m7.avg_contrasts) |>
+  mutate(
+    item = factor(item, levels = c(levels(df_polpart_items$item), "Overall ATE")),
+    contrast = factor(contrast, levels = c("Anxiety - Hope", "Anxiety − Control", "Hope − Control"))
+  )
+
+# Compute whether HDI excludes zero for each item
+m7.hdi_check <- m7.contrasts |>
+  mutate(estimate = estimate * 100) |>
+  group_by(item, contrast) |>
+  median_hdi(estimate, .width = 0.95) |>
+  mutate(excludes_zero = if_else(sign(.lower) == sign(.upper), "Excludes zero", "Includes zero")) |>
+  select(item, contrast, excludes_zero)
+```
+
+```{r}
+#| fig-height: 5
+#| fig-width: 10
+#| fig-dpi: 600
+#| fig-showtext: TRUE
+showtext_opts(dpi = 600)
+m7.contrasts |>
+  mutate(estimate = estimate * 100) |>
+  left_join(m7.hdi_check, by = c("item", "contrast")) |>
+  ggplot(aes(x = estimate, y = item, fill = excludes_zero)) +
+  geom_vline(xintercept = 0, linetype = "dashed", color = "gray40", linewidth = 0.6) +
+  stat_slabinterval(
+    .width = c(.95),
+    point_interval = "median_hdi",
+    scale = 0.7,
+    slab_alpha = 0.6,        
+    interval_alpha = 1,      
+    point_alpha = 1,          
+    normalize = "groups",
+    point_size = 2.5,
+    interval_size = 1.5) +
+  facet_wrap(~contrast) +
+  scale_fill_manual(
+    name = "95% HDI",
+    values = c("Excludes zero" = "#364B9A", "Includes zero" = "#4A7BB7"),
+  ) +
+  # scale_color_manual(
+  #   name = "95% HDI",
+  #   values = c("Excludes zero" = "#364B9A", "Includes zero" = "#4A7BB7"),
+  # ) +
+  scale_x_continuous(limits = c(-15, 15), breaks = seq(-10, 10, by = 5), expand = expansion(add = 2.5)) +
+  labs(
+    x = "Percentage Points",
+    y = NULL,
+    title = "Treatment Effects on Political Participation",
+    subtitle = "Posterior Distributions with Median and 95% HDI"
+  ) +
+  theme_nice() +
+  theme(
+    panel.grid.major.x = element_line(color = "grey90", linewidth = 0.2),
+    legend.position = "bottom"
+  )
+
+ggsave(here(figure_dir, "polpart_mod_item.png"),
+       height = 5,
+       width = 10,
+       dpi = 600)
+```
+
+```{r}
+m7.ate_table <- m7.contrasts |>
+  filter(type == "Item-level") |>  
+  group_by(contrast, .draw) |>
+  summarise(estimate = mean(estimate), .groups = "drop") |>
+  group_by(contrast) |>
+  median_hdi(estimate, .width = 0.95) |> 
+  select(Contrast = contrast,
+         Median = estimate,
+         "95% HDI Lower" = .lower,
+         "95% HDI Upper" = .upper
+  ) 
+
+m7.ate_table |> 
+  tt()
+```
+
+```{r}
+m7.cate_table <- m7.contrasts |>
+  filter(type == "Item-level") |>
+  group_by(contrast, item) |>
+  median_hdi(estimate, .width = 0.95) |> 
+  select(Contrast = contrast,
+         Item = item,
+         Median = estimate,
+         "95% HDI Lower" = .lower,
+         "95% HDI Upper" = .upper
+  ) 
+
+m7.cate_table |> 
+  tt()
+```
+
+## Visualize Models 1, 2, 5
+
+### Extract Posterior Draws
+
+```{r}
+# M1: Overall ATE
+m1.draws <- expand.grid(
+  exp_condition = c("control", "anxiety", "hope")
+) |>
+  add_epred_draws(m1, re_formula = NA, ndraws = 4000) |>
+  ungroup()
+
+m1.contrasts <- m1.draws |>
+  select(exp_condition, .draw, .epred) |>
+  pivot_wider(names_from = exp_condition, values_from = .epred) |>
+  mutate(
+    `Anxiety − Control` = anxiety - control,
+    `Hope − Control` = hope - control,
+    `Anxiety - Hope` = anxiety - hope
+  ) |>
+  pivot_longer(
+    cols = c(`Anxiety − Control`, `Hope − Control`, `Anxiety - Hope`),
+    names_to = "contrast",
+    values_to = "estimate"
+  ) |>
+  mutate(
+    model = "ATE",
+    subgroup = "ATE"
+  )
+
+# M2: cATE by age_group
+m2.draws <- expand.grid(
+  exp_condition = c("control", "anxiety", "hope"),
+  age_group = unique(df$age_group)
+  ) |>
+  add_epred_draws(m2, re_formula = NA, ndraws = 4000) |>
+  ungroup()
+
+m2.contrasts <- m2.draws |>
+  select(exp_condition, age_group, .draw, .epred) |>
+  pivot_wider(names_from = exp_condition, values_from = .epred) |>
+  mutate(
+    `Anxiety − Control` = anxiety - control,
+    `Hope − Control` = hope - control,
+    `Anxiety - Hope` = anxiety - hope
+  ) |>
+  pivot_longer(
+    cols = c(`Anxiety − Control`, `Hope − Control`, `Anxiety - Hope`),
+    names_to = "contrast",
+    values_to = "estimate"
+  ) |>
+  mutate(
+    model = "Age",
+    subgroup = as.character(age_group)
+  ) |>
+  select(-age_group)
+
+# m3: cATE by gender
+m3.draws <- expand.grid(
+  exp_condition = c("control", "anxiety", "hope"),
+  gender = unique(df$gender)
+) |>
+  add_epred_draws(m3, re_formula = NA, ndraws = 4000) |>
+  ungroup() |> 
+  filter(gender != "other")
+
+m3.contrasts <- m3.draws |>
+  select(exp_condition, gender, .draw, .epred) |>
+  pivot_wider(names_from = exp_condition, values_from = .epred) |>
+  mutate(
+    `Anxiety − Control` = anxiety - control,
+    `Hope − Control` = hope - control,
+    `Anxiety - Hope` = anxiety - hope
+  ) |>
+  pivot_longer(
+    cols = c(`Anxiety − Control`, `Hope − Control`, `Anxiety - Hope`),
+    names_to = "contrast",
+    values_to = "estimate"
+  ) |>
+  mutate(
+    model = "Gender",
+    subgroup = as.character(gender)
+  ) |>
+  select(-gender)
+
+pairwise_plot_data <- bind_rows(m1.contrasts, m2.contrasts, m3.contrasts) |>
+  mutate(
+    contrast = factor(contrast, levels = c("Anxiety - Hope", "Anxiety − Control", "Hope − Control")),
+    model = factor(model, levels = c("ATE", "Age", "Gender"))
+  )
+
+# Compute whether HDI excludes zero for each group
+hdi_check <- pairwise_plot_data |>
+  mutate(
+    estimate = estimate * 100,
+    subgroup = case_when(
+      subgroup == "male" ~ "Men",
+      subgroup == "female" ~ "Women",
+      subgroup == "16-21 years" ~ "16-21",
+      subgroup == "22-26 years" ~ "22-26",
+      TRUE ~ subgroup
+    ),
+    subgroup = factor(subgroup, levels = c("ATE", "22-26", "16-21", "Women", "Men"))
+  ) |>
+  group_by(model, contrast, subgroup) |>
+  median_hdi(estimate, .width = 0.95) |>
+  mutate(excludes_zero = if_else(sign(.lower) == sign(.upper), "Excludes zero", "Includes zero")) |>
+  select(model, contrast, subgroup, excludes_zero)
+```
+
+### Visualize
+
+```{r}
+#| fig-height: 5.5
+#| fig-width: 8
+#| fig-dpi: 600
+#| fig-showtext: TRUE
+showtext_opts(dpi = 600)
+
+pairwise_plot_data |>
+  mutate(
+    estimate = estimate * 100,
+    subgroup = case_when(
+      subgroup == "male" ~ "Men",
+      subgroup == "female" ~ "Women",
+      subgroup == "16-21 years" ~ "16-21",
+      subgroup == "22-26 years" ~ "22-26",
+      TRUE ~ subgroup
+    ),
+    subgroup = factor(subgroup, levels = c("ATE", "22-26", "16-21", "Women", "Men"))
+  ) |>
+  left_join(hdi_check, by = c("model", "contrast", "subgroup")) |>
+  ggplot(aes(x = estimate, y = subgroup, fill = excludes_zero)) +
+  geom_vline(xintercept = 0, linetype = "dashed", color = "gray40", linewidth = 0.6) +
+  stat_slabinterval(
+    .width = c(.95),
+    point_interval = "median_hdi",
+    scale = 0.7,
+    slab_alpha = 0.6,        
+    interval_alpha = 1,      
+    point_alpha = 1,          
+    normalize = "groups",
+    point_size = 2.5,
+    interval_size = 1.5) +
+  facet_grid(model ~ contrast, scales = "free_y", space = "free_y") +
+  scale_fill_manual(
+    values = c("Excludes zero" = "#364B9A", "Includes zero" = "#4A7BB7"),
+    name = "95% HDI",
+  ) +
+  # scale_color_manual(
+  #   values = c("Excludes zero" = "#364B9A", "Includes zero" = "#4A7BB7"),
+  #   name = "95% HDI",
+  # ) +
+  scale_x_continuous(limits = c(-10, 10), breaks = seq(-10, 10, by = 5), expand = expansion(add = 2.5)) +
+  labs(
+    x = "Percentage Points",
+    y = NULL,
+    title = "Effects on Political Participation",
+    subtitle = "Posterior Distributions with Median and 95% HDI"
+  ) +
+  theme_nice() +
+  theme(
+    legend.position = "bottom",
+    panel.grid.major.x = element_line(color = "grey90", linewidth = 0.2)
+  ) 
+
+ggsave(here(figure_dir, "RQ2.1_ate_cate_posterior.png"),
+       height = 5.5,
+       width = 8,
+       dpi = 600)
+```
+
+

@@ -1,0 +1,383 @@
+================================================================================
+DATA DICTIONARY
+Future Feelings Experiment — Analysis Datasets
+================================================================================
+
+This document describes the variables in the two analysis datasets:
+
+  01_data/analysis/df_wide.csv / .RData   (1,895 rows x 178 columns)
+  01_data/analysis/df_long.csv / .RData   (15,160 rows x 136 columns)
+
+The wide dataset has one row per participant. The long dataset has one row per
+conjoint candidate per trial per participant (4 trials x 2 candidates = 8 rows
+per participant). Both datasets share the same participant-level variables; the
+long dataset additionally contains trial- and candidate-level conjoint variables.
+
+POMP scores (Percent of Maximum Possible) rescale a composite to the range
+[0, 1], where 0 = minimum possible score and 1 = maximum possible score.
+All scale composites are provided both as raw sums and as POMP scores.
+
+Variables marked [WIDE ONLY] appear only in df_wide.
+Variables marked [LONG ONLY] appear only in df_long.
+All other variables appear in both datasets.
+
+
+================================================================================
+1. META-DATA
+================================================================================
+
+id                      Unique participant identifier
+
+date                    Survey completion date
+
+duration                Survey duration in seconds
+
+sample_type             Whether the participant was recruited fresh for this
+                        wave or recontacted from a prior wave
+                        Values: fresh, recontact
+
+exp_design [WIDE ONLY]  Conjoint design string encoding the randomised profile
+                        attribute combinations for each trial. Used internally
+                        by the cleaning script to reconstruct the conjoint
+                        profiles; not intended for direct analysis.
+
+exp_debriefing          Whether the participant completed the post-experiment
+                        debriefing section
+
+
+================================================================================
+2. SOCIO-DEMOGRAPHICS
+================================================================================
+
+target_group            Recruitment age group
+                        Values: Target 1: 16-21, Target 2: 22-26
+
+region                  UK region of residence
+                        Values: East Midlands, East of England, London,
+                        North East, North West, Northern Ireland, Scotland,
+                        South East, South West, Wales, West Midlands,
+                        Yorkshire and The Humber
+
+age                     Participant age in years (16–26)
+
+age_group               Dichotomised age group
+                        Values: 16-21 years, 22-26 years
+
+gender                  Gender
+                        Values: female, male, other
+
+urbanicity              Type of area the participant lives in
+                        Values: a large town or city,
+                                a small or middle size town,
+                                a rural area or village
+
+work_situation          Current work or study situation
+                        Values: At university, Employed, In school, Other,
+                                Self-employed, Unemployed,
+                                Working in the household
+
+education               Education level (detailed, as collected)
+
+education_level         Education level (ISCED classification, 3 categories)
+                        Values: ISCED 0-2, ISCED 3-4, ISCED 5-8
+
+born_in_country         Whether the participant was born in the UK
+                        Values: Yes, No
+
+parents_born_in_country Whether both parents were born in the UK
+                        Values: Yes, No
+
+migration_background    Derived migration background indicator
+                        Values: Migration background, No migration background
+
+living_standard         Self-assessed household financial situation (4 levels)
+                        Values: Living comfortably on present income,
+                                Coping on present income,
+                                Finding it difficult on present income,
+                                Finding it very difficult on present income
+
+living_standard_small   Collapsed version of living_standard (2 levels)
+                        Values: Stable, Difficult
+
+
+================================================================================
+3. EXPERIMENTAL VARIABLES
+================================================================================
+
+--- Treatment ---
+
+exp_condition           Randomly assigned experimental condition
+                        Values: anxiety, hope, control
+
+exp_treatment_time      Time (in seconds) participants spent viewing the
+                        experimental stimulus post
+
+--- Post-Treatment Outcomes: Engagement with the Post ---
+
+exp_attention           What the post was about, as recalled by the participant
+                        (attention/recall check item, not used as exclusion)
+                        Values: Costs of living, English education,
+                                Immigration policy, The US election,
+                                Voter registration
+
+exp_comment             Open-text comment the participant wrote in response to
+                        the post (raw text, not included in analysis models)
+
+exp_comment_sentiment   Sentiment of the participant's comment, coded by LLM
+                        Scale: 1 (very negative) – 7 (very positive)
+
+exp_comment_emotion     Dominant emotion expressed in the participant's comment,
+                        coded by LLM
+                        Values: anxious, angry, hopeful, happy, calm
+
+exp_reaction            The emotion the participant selected as their reaction
+                        to the post
+                        Values: Anxious, Angry, Hopeful, Happy, Calm
+
+exp_share               Likelihood of sharing the post
+                        Values: Very unlikely, Unlikely,
+                                Neither likely nor unlikely,
+                                Likely, Very likely
+
+exp_like                Likelihood of liking the post
+                        Values: Very unlikely, Unlikely,
+                                Neither likely nor unlikely,
+                                Likely, Very likely
+
+--- Post-Treatment Outcomes: Main DVs ---
+
+exp_dem_pomp            Democratic support composite score (POMP, 0–1)
+                        Average of 7 reverse-coded items measuring support for
+                        democratic norms and rejection of anti-democratic
+                        behaviour by political leaders
+
+exp_dem_censor_media    Item: leader censoring the media (raw)
+exp_dem_censor_media_rev   Item: leader censoring the media (reverse-coded)
+exp_dem_one_party       Item: leader allowing only one party (raw)
+exp_dem_one_party_rev      Item: leader allowing only one party (reverse-coded)
+exp_dem_question_vote   Item: leader questioning election results (raw)
+exp_dem_question_vote_rev  Item: leader questioning election results (rev.)
+exp_dem_respect_elections  Item: leader respecting election results
+exp_dem_ignore_courts   Item: leader ignoring court rulings (raw)
+exp_dem_ignore_courts_rev  Item: leader ignoring court rulings (reverse-coded)
+exp_dem_ignore_parliament     Item: leader ignoring parliament (raw)
+exp_dem_ignore_parliament_rev Item: leader ignoring parliament (reverse-coded)
+exp_dem_bend_law        Item: leader bending the law (raw)
+exp_dem_bend_law_rev       Item: leader bending the law (reverse-coded)
+exp_dem_sum             Raw sum of reverse-coded democratic support items
+
+exp_polpart_pomp        Political participation intentions composite (POMP, 0–1)
+                        Average of 5 items measuring willingness to participate
+                        in political activities in response to the post
+
+exp_polpart_explain_vote   Item: willingness to explain voting choice
+exp_polpart_share_story    Item: willingness to share a personal story
+exp_polpart_send_video     Item: willingness to send a political video
+exp_polpart_discuss_online Item: willingness to discuss politics online
+exp_polpart_protest        Item: willingness to attend a protest
+exp_polpart_sum            Raw sum of political participation intention items
+
+exp_polinfo             Whether the participant chose to receive more information
+                        on how to get involved in democracy (behavioural
+                        measure of information seeking; binary)
+                        Values: Yes, I want to see information on how to get
+                                more involved in democracy /
+                                No, I do not want to see information on how
+                                to get more involved in democracy
+
+exp_polinfo_time        Time (in seconds) spent on the political information
+                        page, among participants who chose to see it
+                        Range: ~1.7 – 1271 seconds; NA if exp_polinfo = No
+
+--- Manipulation Check ---
+
+anxiety_hope_dim        Derived manipulation check dimension
+                        0 = hope condition, 1 = anxiety condition
+                        (used to estimate the anxiety vs. hope contrast)
+
+exp_check_anxious       Post-treatment emotion rating: how anxious
+                        Visual analogue scale: 0–100
+exp_check_angry         Post-treatment emotion rating: how angry (0–100)
+exp_check_hopeful       Post-treatment emotion rating: how hopeful (0–100)
+exp_check_happy         Post-treatment emotion rating: how happy (0–100)
+exp_check_calm          Post-treatment emotion rating: how calm (0–100)
+
+
+================================================================================
+4. CONJOINT EXPERIMENT — WIDE FORMAT [WIDE ONLY]
+================================================================================
+
+The conjoint experiment presented participants with 4 choice tasks (trials).
+In each trial, they saw two hypothetical political candidates (A and B) and
+chose which one they would vote for. Each candidate profile was defined by
+5 attributes: sex, age, party, democratic behaviour, and economic reputation.
+
+For each trial (1–4) and each candidate (1 = Candidate A, 2 = Candidate B),
+the following raw profile attributes are stored:
+
+exp_choiceT_sexC        Sex of candidate C in trial T
+                        Values: Male, Female
+
+exp_choiceT_ageC        Age of candidate C in trial T
+                        Values: integer (30–69)
+
+exp_choiceT_partyC      Party affiliation of candidate C in trial T
+                        Values: Conservatives, Labour, Liberal Democrats,
+                                Green Party, Reform UK
+
+exp_choiceT_demC_raw    Randomly assigned democratic behaviour description
+                        for candidate C in trial T (raw label from the design)
+
+exp_choiceT_demC        Democratic behaviour of candidate C in trial T
+                        (coded from the raw label)
+                        Values: democratic, undemocratic
+
+exp_choiceT_ecoC        Economic reputation of candidate C in trial T
+                        Values: Good at handling economic matters,
+                                Neither good nor bad reputation on economic
+                                matters,
+                                Bad at handling economic matters
+
+exp_conjointT           Which candidate the participant chose in trial T
+                        Values: Candidate A, Candidate B
+
+(T = trial number 1–4; C = candidate number 1–2)
+
+
+================================================================================
+5. CONJOINT EXPERIMENT — LONG FORMAT [LONG ONLY]
+================================================================================
+
+In the long dataset each row represents one candidate within one trial for one
+participant. The conjoint profile attributes and the participant's choice are
+stored in the following variables:
+
+trial                   Conjoint trial number (1–4)
+
+candidate               Candidate number within the trial (1 = A, 2 = B)
+
+candidate_label         Candidate label
+                        Values: Candidate A, Candidate B
+
+choice                  Which candidate the participant chose in this trial
+                        Values: Candidate A, Candidate B
+
+conjoint_choice         Whether this candidate was chosen (binary outcome
+                        variable used in conjoint models)
+                        Values: 0 = not chosen, 1 = chosen
+
+conjoint_sex            Sex of this candidate
+                        Values: Female, Male
+
+conjoint_age            Age of this candidate (integer, 30–69)
+
+conjoint_party          Party affiliation of this candidate
+                        Values: Conservatives, Labour, Liberal Democrats,
+                                Green Party, Reform UK
+
+conjoint_dem            Democratic behaviour of this candidate
+                        Values: democratic, undemocratic
+
+conjoint_eco            Economic reputation of this candidate
+                        Values: Good at handling economic matters,
+                                Neither good nor bad reputation on economic
+                                matters,
+                                Bad at handling economic matters
+
+
+================================================================================
+6. PRE-TREATMENT SCALES — COMPOSITES
+================================================================================
+
+All composites are stored as both a raw sum and a POMP score (0–1).
+
+polpart_pomp            Pre-treatment political participation composite
+                        (POMP, 0–1); 5 items
+polpart_sum             Raw sum of the 5 political participation items
+polpart_party           Item: member of or active in a political party
+polpart_badge           Item: worn a badge or displayed a sticker
+polpart_petition        Item: signed a petition
+polpart_demonstration   Item: attended a demonstration
+polpart_social_media    Item: posted political content on social media
+
+aut_pomp                Authoritarian preferences composite (POMP, 0–1); 3 items
+aut_sum                 Raw sum of the 3 authoritarian preference items
+aut_strong_leader       Item: support for a strong leader above parliament
+aut_strong_government   Item: support for a strong government without opposition
+aut_less_control        Item: support for less government control
+
+dem_pomp                Democratic preferences composite (POMP, 0–1); 3 items
+dem_sum                 Raw sum of the 3 democratic preference items
+dem_equal_vote          Item: equal voting rights are important
+dem_fundamental_rights  Item: protection of fundamental rights is important
+dem_multiple_parties    Item: multiple parties are important for democracy
+
+cognitive_reappraisal_pomp   Cognitive reappraisal composite (POMP, 0–1)
+                             ERQ subscale; 6 items
+cognitive_reappraisal_sum    Raw sum
+erq_reappraisal1 – erq_reappraisal6   Individual ERQ reappraisal items
+
+expressive_suppression_pomp  Expressive suppression composite (POMP, 0–1)
+                             ERQ subscale; 4 items
+expressive_suppression_sum   Raw sum
+erq_suppression1 – erq_suppression4   Individual ERQ suppression items
+
+ambiguity_intolerance_pomp   Intolerance of ambiguity composite (POMP, 0–1);
+                             4 items
+ambiguity_intolerance_sum    Raw sum
+ambiguity1 – ambiguity4      Individual ambiguity intolerance items
+
+aot_pomp                Actively open-minded thinking composite (POMP, 0–1);
+                        6 items (reverse-coded versions used in composite)
+aot_sum                 Raw sum (using reverse-coded items)
+aot1 – aot6             Individual AOT items (original direction)
+aot1_rev – aot6_rev     Individual AOT items (reverse-coded)
+
+
+================================================================================
+7. POLITICAL ATTITUDES (PRE-TREATMENT)
+================================================================================
+
+left_right              Self-placement on a left-right ideology scale
+                        Scale: 0 (left) – 10 (right)
+
+progressive_conservative  Self-placement on a progressive-conservative scale
+                          Scale: 0 (progressive) – 10 (conservative)
+
+political_interest      Interest in politics
+                        Values: Not at all interested, A little interested,
+                                Fairly interested, Very interested
+
+mii                     Most important issue facing the country (open text)
+
+mii_category            Most important issue, categorised (detailed)
+
+mii_category_small      Most important issue, collapsed into broad categories
+                        Values: economy, health, immigration, environment,
+                                inequality, austerity/spending, europe,
+                                terrorism, other left-right, other lib-auth,
+                                negativity, other
+
+conservatives_feeling   Feeling thermometer: Conservative Party (0–10)
+labour_feeling          Feeling thermometer: Labour Party (0–10)
+libdems_feeling         Feeling thermometer: Liberal Democrats (0–10)
+greens_feeling          Feeling thermometer: Green Party (0–10)
+reform_feeling          Feeling thermometer: Reform UK (0–10)
+
+
+================================================================================
+8. ATTENTION CHECKS
+================================================================================
+
+pre_attention1          Pre-treatment attention check item 1
+pre_attention2          Pre-treatment attention check item 2
+pre_attention3          Pre-treatment attention check item 3
+
+post_attention1         Post-treatment attention check item
+
+pre_attention_exclusion Whether the participant was flagged for exclusion based
+                        on the pre-treatment attention checks (only participants
+                        coded "include" are retained in the analysis datasets)
+                        Values: include
+
+================================================================================

@@ -1,0 +1,583 @@
+---
+title: "Variable Preparations"
+description: "Data cleaning and calculation of composite scores" 
+
+format:
+  html:
+    theme: paper
+    shift-heading-level-by: 1
+    code-tools: true
+    code-fold: true
+    toc: true
+    toc-fold: false
+    toc-location: right
+    toc-depth: 3
+    toc-title: "Contents"
+
+# Portability settings
+embed-resources: true
+
+# Execution options 
+execute:
+  warning: false
+---
+
+```{r}
+#| include: false
+# set error messages to English
+Sys.setenv(LANG = "en")
+
+knitr::opts_chunk$set(
+  fig.align = "center", 
+  fig.retina = 3,
+  fig.width = 6, 
+  fig.height = (6 * 0.618),
+  out.width = "90%", 
+  collapse = FALSE
+)
+
+options(
+  digits = 4,
+  width = 300,
+  dplyr.summarise.inform = FALSE)
+```
+
+```{r}
+#| include: false
+#| warning: true
+#| message: true
+if (!require("groundhog", quietly = TRUE)) {
+  install.packages("groundhog")
+}
+library("groundhog")
+
+# use groundhog to install and load packages
+pkgs <- c("here",         # System path management
+          "tidyverse",    # ggplot, dplyr, and friends
+          "psych",        # Procedures for psychological research, psychometrics
+          "tinytable",    # Minimalist tables
+          "modelsummary"  # Data and model summaries with tables and plots
+          )
+
+groundhog.library(pkgs, "2026-01-01")
+```
+
+```{r}
+#| include: false
+data_dir <- here("01_data")
+data_clean_dir <- here("01_data", "clean")
+table_dir <- here("02_output", "tables", "descriptives")
+figure_dir <- here("02_output", "figures", "descriptives")
+
+dir.create(data_clean_dir, recursive = TRUE, showWarnings = TRUE)
+dir.create(table_dir, recursive = TRUE, showWarnings = TRUE)
+dir.create(figure_dir, recursive = TRUE, showWarnings = TRUE)
+```
+
+```{r}
+load(here(data_dir, "raw", "exp_dat_raw.RData"))
+```
+
+## Apply Pre-Registered Exclusions
+
+```{r}
+initial_sample <- nrow(df_exp)
+df_exp <- df_exp |> 
+  filter(pre_attention_exclusion == "include")
+final_sample <- nrow(df_exp)
+```
+
+```{r}
+print(paste("N =", initial_sample - final_sample, "participants excluded due to 2 or more failed pre-treatment attention checks. Final analysis n =", final_sample))
+```
+
+## Calculate (Composite) Variables
+
+### Factors 
+
+```{r}
+df_exp <- df_exp |> 
+  mutate(exp_condition = factor(exp_condition, levels = c("control", "hope", "anxiety")),
+         age_group = fct_collapse(age_group,
+                                  "16-21 years" = c("16 - 17 years", "18 - 21 years"),
+                                  "22-26 years" = "22 - 26 years"))
+```
+
+### Pre-treatment Scales
+
+#### Political participation 
+
+```{r}
+df_exp <- df_exp |>
+  mutate(
+    polpart_sum = polpart_party + polpart_badge + polpart_petition + 
+                  polpart_demonstration + polpart_social_media,
+    polpart_pomp = (polpart_sum - 5) / (35 - 5)
+  )
+
+df_exp |> 
+  select(polpart_pomp, polpart_sum, 
+         polpart_party, polpart_badge, polpart_petition, polpart_demonstration, polpart_social_media) |> 
+  datasummary_correlation()
+
+df_exp |> 
+  select(polpart_pomp, polpart_sum) |> 
+  datasummary_skim()
+```
+
+McDonald's Omega:
+```{r}
+polpart_omega <- df_exp |> 
+  select(starts_with("polpart_")) |> 
+  select(-polpart_sum, -polpart_pomp) |>
+  omega(m = _, nfactors = 1)
+
+polpart_omega$omega.tot
+```
+
+#### Authoritarian and Democratic Preferences
+
+```{r}
+df_exp <- df_exp |>
+  mutate(
+    aut_sum = aut_strong_leader + aut_strong_government + aut_less_control,
+    aut_pomp = (aut_sum - 3) / (21 - 3),
+    dem_sum = dem_equal_vote + dem_fundamental_rights + dem_multiple_parties,
+    dem_pomp = (dem_sum - 3) / (21 - 3)
+  )
+
+df_exp |> 
+  select(aut_pomp, aut_sum, 
+         aut_strong_leader, aut_strong_government, aut_less_control,
+         dem_pomp, dem_sum, 
+         dem_equal_vote, dem_fundamental_rights, dem_multiple_parties) |> 
+  datasummary_correlation()
+
+df_exp |> 
+  select(aut_pomp, aut_sum, dem_pomp, dem_sum) |> 
+  datasummary_skim()
+```
+
+Mc Donald's Omega
+```{r}
+aut_omega <- df_exp |> 
+  select(starts_with("aut_")) |> 
+  select(-aut_sum, -aut_pomp) |>
+  omega(nfactors = 1)
+
+aut_omega$omega.tot
+```
+
+```{r}
+dem_omega <- df_exp |> 
+  select(starts_with("dem_")) |> 
+  select(-dem_sum, -dem_pomp) |>
+  omega(nfactors = 1)
+
+dem_omega$omega.tot
+```
+
+#### Emotion Regulation
+
+```{r}
+df_exp <- df_exp |>
+  mutate(
+    cognitive_reappraisal_sum = erq_reappraisal1 + erq_reappraisal2 + erq_reappraisal3 + 
+                                erq_reappraisal4 + erq_reappraisal5 + erq_reappraisal6,
+    cognitive_reappraisal_pomp = (cognitive_reappraisal_sum - 6) / (42 - 6),
+    expressive_suppression_sum = erq_suppression1 + erq_suppression2 + 
+                                 erq_suppression3 + erq_suppression4,
+    expressive_suppression_pomp = (expressive_suppression_sum - 4) / (28 - 4)
+  )
+
+df_exp |> 
+  select(cognitive_reappraisal_pomp, cognitive_reappraisal_sum,
+         erq_reappraisal1, erq_reappraisal2, erq_reappraisal3,
+         erq_reappraisal4, erq_reappraisal5, erq_reappraisal6,
+         expressive_suppression_pomp, expressive_suppression_sum,
+         erq_suppression1, erq_suppression2, erq_suppression3, erq_suppression4) |> 
+  datasummary_correlation()
+
+df_exp |> 
+  select(cognitive_reappraisal_pomp, cognitive_reappraisal_sum,
+         expressive_suppression_pomp, expressive_suppression_sum) |> 
+  datasummary_skim()
+```
+
+```{r}
+cognitive_reappraisal_omega <- df_exp |> 
+  select(starts_with("erq_reappraisal")) |>
+  omega(nfactors = 1)
+
+cognitive_reappraisal_omega$omega.tot
+```
+
+```{r}
+expressive_suppression_omega <- df_exp |> 
+  select(starts_with("erq_suppression")) |>
+  omega(nfactors = 1)
+
+expressive_suppression_omega$omega.tot
+```
+
+#### Ambiguity avoidance
+
+```{r}
+df_exp <- df_exp |>
+  mutate(
+    ambiguity_intolerance_sum = ambiguity1 + ambiguity2 + ambiguity3 + ambiguity4,
+    ambiguity_intolerance_pomp = (ambiguity_intolerance_sum - 4) / (28 - 4)
+  )
+
+df_exp |> 
+  select(ambiguity_intolerance_pomp, ambiguity_intolerance_sum,
+         ambiguity1, ambiguity2, ambiguity3, ambiguity4) |> 
+  datasummary_correlation()
+
+df_exp |> 
+  select(ambiguity_intolerance_pomp, ambiguity_intolerance_sum) |> 
+  datasummary_skim()
+```
+
+```{r}
+ambiguity_intolerance_omega <- df_exp |> 
+  select(starts_with("ambiguity")) |>
+  select(-ambiguity_intolerance_sum, -ambiguity_intolerance_pomp) |>
+  omega(nfactors = 1)
+
+ambiguity_intolerance_omega$omega.tot
+```
+
+#### AOT
+
+```{r}
+df_exp <- df_exp |>
+  mutate(
+    across(aot1:aot6, ~ 8 - ., .names = "{.col}_rev"),
+    aot_sum = aot1_rev + aot2_rev + aot3_rev + aot4_rev + aot5_rev + aot6_rev,
+    aot_pomp = (aot_sum - 6) / (42 - 6)
+  )
+
+df_exp |> 
+  select(aot_pomp, aot_sum,
+         aot1_rev, aot2_rev, aot3_rev, aot4_rev, aot5_rev, aot6_rev) |> 
+  datasummary_correlation()
+
+df_exp |> 
+  select(aot_pomp, aot_sum) |> 
+  datasummary_skim()
+```
+
+```{r}
+aot_omega <- df_exp |> 
+  select(aot1_rev:aot6_rev) |>
+  omega(nfactors = 1)
+
+aot_omega$omega.tot
+```
+
+## Post-Treatment Scales
+
+#### Experiment Democratic Support
+
+```{r}
+df_exp <- df_exp |>
+  mutate(
+    exp_dem_censor_media_rev = 6 - exp_dem_censor_media,
+    exp_dem_one_party_rev = 6 - exp_dem_one_party,
+    exp_dem_question_vote_rev = 6 - exp_dem_question_vote,
+    exp_dem_ignore_courts_rev = 6 - exp_dem_ignore_courts,
+    exp_dem_ignore_parliament_rev = 6 - exp_dem_ignore_parliament,
+    exp_dem_bend_law_rev = 6 - exp_dem_bend_law,
+    exp_dem_sum = exp_dem_censor_media_rev + exp_dem_one_party_rev + 
+                  exp_dem_question_vote_rev + exp_dem_respect_elections +
+                  exp_dem_ignore_courts_rev + exp_dem_ignore_parliament_rev + 
+                  exp_dem_bend_law_rev,
+    exp_dem_pomp = (exp_dem_sum - 7) / (35 - 7)
+  )
+
+df_exp |> 
+  select(exp_dem_pomp, exp_dem_sum,
+         exp_dem_censor_media_rev, exp_dem_one_party_rev, exp_dem_question_vote_rev,
+         exp_dem_respect_elections, exp_dem_ignore_courts_rev, 
+         exp_dem_ignore_parliament_rev, exp_dem_bend_law_rev) |> 
+  datasummary_correlation()
+
+df_exp |> 
+  select(exp_dem_pomp, exp_dem_sum) |> 
+  datasummary_skim()
+```
+
+```{r}
+exp_dem_omega <- df_exp |> 
+  select(exp_dem_censor_media_rev, exp_dem_one_party_rev, exp_dem_question_vote_rev,
+         exp_dem_respect_elections, exp_dem_ignore_courts_rev, 
+         exp_dem_ignore_parliament_rev, exp_dem_bend_law_rev) |>
+  omega(nfactors = 1)
+
+exp_dem_omega$omega.tot
+```
+
+#### Experiment Political Participation 
+
+```{r}
+df_exp <- df_exp |>
+  mutate(
+    exp_polpart_sum = exp_polpart_explain_vote + exp_polpart_share_story +
+                            exp_polpart_send_video + exp_polpart_discuss_online +
+                            exp_polpart_protest,
+    exp_polpart_pomp = (exp_polpart_sum - 5) / (25 - 5)
+  )
+
+df_exp |> 
+  select(exp_polpart_pomp, exp_polpart_sum,
+         exp_polpart_explain_vote, exp_polpart_share_story,
+         exp_polpart_send_video, exp_polpart_discuss_online,
+         exp_polpart_protest) |> 
+  datasummary_correlation()
+
+df_exp |> 
+  select(exp_polpart_pomp, exp_polpart_sum) |> 
+  datasummary_skim()
+```
+
+```{r}
+exp_polpart_omega <- df_exp |> 
+  select(exp_polpart_explain_vote, exp_polpart_share_story,
+         exp_polpart_send_video, exp_polpart_discuss_online,
+         exp_polpart_protest) |>
+  omega(nfactors = 1)
+
+exp_polpart_omega$omega.tot
+```
+
+### Reliability Table 
+
+```{r}
+reliability_table <- tibble(
+  Scale = c(
+    "Political Participation (Pre)",
+    "Authoritarianism (Pre)",
+    "Democratism (Pre)",
+    "Cognitive Reappraisal (Pre)",
+    "Expressive Suppression (Pre)",
+    "Ambiguity Intolerance (Pre)",
+    "Actively Open-Minded Thinking (Pre)",
+    "Democratic Support (Post)",
+    "Political Participation (Post)"
+  ),
+  `McDonald's Omega` = c(
+    polpart_omega$omega.tot,
+    aut_omega$omega.tot,
+    dem_omega$omega.tot,
+    cognitive_reappraisal_omega$omega.tot,
+    expressive_suppression_omega$omega.tot,
+    ambiguity_intolerance_omega$omega.tot,
+    aot_omega$omega.tot,
+    exp_dem_omega$omega.tot,
+    exp_polpart_omega$omega.tot
+  ),
+  `Cronbach's Alpha` = c(
+    polpart_omega$alpha,
+    aut_omega$alpha,
+    dem_omega$alpha,
+    cognitive_reappraisal_omega$alpha,
+    expressive_suppression_omega$alpha,
+    ambiguity_intolerance_omega$alpha,
+    aot_omega$alpha,
+    exp_dem_omega$alpha,
+    exp_polpart_omega$alpha
+  )
+)
+
+reliability_table |> 
+  tt()
+
+reliability_table |> 
+  tt() |> 
+  save_tt(here(table_dir, "reliability_table.docx"), overwrite = TRUE)
+```
+
+## Manipulation Check
+
+```{r}
+df_exp <- df_exp |> 
+  mutate(anxiety_hope_dim = (exp_check_anxious - exp_check_hopeful + 100) / 200)
+```
+
+## Conjoint Experiment
+
+### Code democratic / undemocratic behaviour
+
+```{r}
+df_exp <- df_exp |>
+  rename_with(
+    ~ str_replace(., "^(exp_choice\\d_dem\\d)$", "\\1_raw"),
+    matches("^exp_choice\\d_dem\\d$")
+  ) |>
+  mutate(
+    across(
+      matches("exp_choice\\d_dem\\d_raw"), 
+      ~ case_when(
+        str_detect(., "adhered to$") ~ "democratic",
+        str_detect(., "preserve existing polling-stations") ~ "democratic",
+        str_detect(., "unacceptable to harass journalists") ~ "democratic",
+        str_detect(., "unacceptable to fight political opponents") ~ "democratic",
+        str_detect(., "should be ignored$") ~ "undemocratic",
+        str_detect(., "reduce polling stations") ~ "undemocratic",
+        str_detect(., "acceptable to harass journalists") ~ "undemocratic",
+        str_detect(., "legitimate to fight political opponents") ~ "undemocratic"
+      ),
+      .names = "{str_remove(.col, '_raw$')}"
+    )
+  )
+```
+
+```{r}
+df_exp |>
+  count(exp_choice1_dem1_raw, exp_choice1_dem1) |> 
+  tt()
+```
+
+## Create final data sets for analysis
+
+### Wide data
+
+```{r}
+df_wide <- df_exp |>
+  select(
+    id, date, duration, sample_type, target_group,
+    region, age, age_group, gender, urbanicity, work_situation,
+    education, education_level, born_in_country, parents_born_in_country,
+    migration_background, living_standard, living_standard_small,
+    
+    exp_condition, exp_treatment_time, exp_attention,
+    
+    exp_comment, exp_reaction, exp_share, exp_like,
+    
+    exp_dem_pomp, 
+    exp_dem_censor_media, exp_dem_censor_media_rev, 
+    exp_dem_one_party, exp_dem_one_party_rev,
+    exp_dem_question_vote, exp_dem_question_vote_rev,
+    exp_dem_respect_elections, 
+    exp_dem_ignore_courts, exp_dem_ignore_courts_rev,
+    exp_dem_ignore_parliament, exp_dem_ignore_parliament_rev,
+    exp_dem_bend_law, exp_dem_bend_law_rev,
+    
+    exp_polpart_pomp,
+    exp_polpart_explain_vote, exp_polpart_share_story,
+    exp_polpart_send_video, exp_polpart_discuss_online, exp_polpart_protest,
+    
+    exp_polinfo, exp_polinfo_time,
+    
+    anxiety_hope_dim, exp_check_anxious, exp_check_angry, 
+    exp_check_hopeful, exp_check_happy, exp_check_calm,
+    
+    starts_with("exp_choice"), starts_with("exp_conjoint"),
+    
+    exp_design, exp_debriefing,
+    
+    polpart_pomp, aut_pomp, dem_pomp,
+    cognitive_reappraisal_pomp, expressive_suppression_pomp,
+    ambiguity_intolerance_pomp, aot_pomp,
+    
+    left_right, progressive_conservative,
+    conservatives_feeling, labour_feeling, libdems_feeling,
+    greens_feeling, reform_feeling,
+    political_interest, mii, mii_category, mii_category_small,
+    
+    polpart_sum, polpart_party, polpart_badge, polpart_petition,
+    polpart_demonstration, polpart_social_media,
+    
+    aut_sum, aut_strong_leader, aut_strong_government, aut_less_control,
+    
+    dem_sum, dem_equal_vote, dem_fundamental_rights, dem_multiple_parties,
+    
+    cognitive_reappraisal_sum, erq_reappraisal1, erq_reappraisal2,
+    erq_reappraisal3, erq_reappraisal4, erq_reappraisal5, erq_reappraisal6,
+    
+    expressive_suppression_sum, erq_suppression1, erq_suppression2,
+    erq_suppression3, erq_suppression4,
+    
+    ambiguity_intolerance_sum, ambiguity1, ambiguity2, ambiguity3, ambiguity4,
+    
+    aot_sum, aot1, aot2, aot3, aot4, aot5, aot6,
+    aot1_rev, aot2_rev, aot3_rev, aot4_rev, aot5_rev, aot6_rev,
+    
+    exp_dem_sum, exp_polpart_sum,
+    
+    pre_attention_exclusion, pre_attention1, pre_attention2, pre_attention3, post_attention1
+  )
+```
+
+### Long data
+
+```{r}
+# Remove uncoded democracy variables
+df_long_1 <- df_wide |>
+  select(-matches("exp_choice\\d_dem\\d_raw$")) |> 
+  mutate(across(matches("exp_choice\\d_age[12]"), as.character)) |> 
+  rename(participant_age = age) 
+
+# Create trial-level data
+df_long_2 <- df_long_1 |>
+  pivot_longer(
+    cols = matches("exp_conjoint[1-4]"),
+    names_to = "trial",
+    values_to = "choice",
+    names_pattern = "exp_conjoint(.)"
+  ) |>
+  mutate(trial = as.integer(trial))
+
+# Stack candidates within trials
+df_long_3 <- df_long_2 |>
+  pivot_longer(
+    cols = matches("exp_choice\\d_(sex|age|party|dem|eco)[12]$"),
+    names_to = c("trial_num", "attribute", "candidate"),
+    names_pattern = "exp_choice(\\d)_(sex|age|party|dem|eco)([12])$",
+    values_to = "level"
+  ) |>
+  filter(trial == trial_num) |>
+  pivot_wider(
+    names_from = attribute,
+    values_from = level
+  ) |>
+  select(-trial_num)
+
+# Create candidate labels and preference coding + final renaming
+df_long <- df_long_3 |>
+  mutate(
+    age = as.integer(age),
+    candidate_label = paste0("Candidate ", if_else(candidate == "1", "A", "B")),
+    conjoint_choice = if_else(candidate_label == choice, 1L, 0L)
+  ) |>
+  rename(
+    conjoint_sex = sex,
+    conjoint_age = age,
+    conjoint_party = party,
+    conjoint_dem = dem,
+    conjoint_eco = eco
+  ) |>
+  select(
+    id:exp_dem_bend_law_rev,
+    
+    trial, candidate, candidate_label, choice, conjoint_choice,
+    conjoint_sex, conjoint_age, conjoint_party, conjoint_dem, conjoint_eco,
+    
+    exp_polpart_pomp:post_attention1
+  )
+```
+
+## Save analysis data 
+
+```{r}
+save(df_wide, file = here(data_clean_dir, "df_wide.RData"))
+write_csv(df_wide, file = here(data_clean_dir, "df_wide.csv"))
+
+save(df_long, file = here(data_clean_dir, "df_long.RData"))
+write_csv(df_long, file = here(data_clean_dir, "df_long.csv"))
+```
+
+
+
+

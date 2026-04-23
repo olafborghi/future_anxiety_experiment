@@ -1,0 +1,467 @@
+---
+title: "Descriptives"
+description: "Sample and variable descriptives" 
+
+format:
+  html:
+    theme: paper
+    shift-heading-level-by: 1
+    code-tools: true
+    code-fold: true
+    toc: true
+    toc-fold: false
+    toc-location: right
+    toc-depth: 3
+    toc-title: "Contents"
+
+# Portability settings
+embed-resources: true
+
+# Execution options 
+execute:
+  warning: false
+---
+
+```{r}
+#| include: false
+# set error messages to English
+Sys.setenv(LANG = "en")
+
+knitr::opts_chunk$set(
+  fig.align = "center", 
+  fig.retina = 3,
+  fig.width = 6, 
+  fig.height = (6 * 0.618),
+  out.width = "90%", 
+  collapse = FALSE
+)
+
+options(
+  digits = 4,
+  width = 300,
+  dplyr.summarise.inform = FALSE)
+```
+
+```{r}
+#| include: false
+#| warning: true
+#| message: true
+if (!require("groundhog", quietly = TRUE)) {
+  install.packages("groundhog")
+}
+library("groundhog")
+
+# use groundhog to install and load packages
+pkgs <- c("here",         # System path management
+          "tidyverse",    # ggplot, dplyr, and friends
+          "tinytable",    # Minimalist tables
+          "rstatix",      # Basic tidy statistical tests 
+          "modelsummary", # Data and model summaries with tables and plots
+          "marginaleffects", # Model-based predictions, comparisons, and more marginalia
+          "ggdist",       # Additional plot elements
+          "ggrain",       # For fancy raincloud plots
+          "GGally",       # ggpairs and other ggplot2 friends
+          "ggsignif",     # Add significance to figures
+          "patchwork",    # Combine multiple ggplots
+          "showtext"      # Additional fonts for plots etc
+          )
+
+groundhog.library(pkgs, "2026-01-01")
+```
+
+```{r}
+#| include: false
+
+showtext_auto()
+# showtext_opts(dpi = 600)
+
+font_add_google("Public Sans", "Public Sans")
+font_add_google("Public Sans", "Public Sans Light", regular.wt = 300)
+font_add_google("Public Sans", "Public Sans Semibold", regular.wt = 600)
+
+# Custom ggplot theme
+theme_nice <- function() {
+  # General text family and base size
+  theme_minimal(base_family = "Public Sans", base_size = 14) +
+    theme(
+      # Remove minor grid lines for cleaner look
+      panel.grid.minor = element_blank(),
+      # Customize major grid lines color
+      panel.grid.major = element_blank(),
+      # Plot title: bold and custom relative size
+      plot.title = element_text(family = "Public Sans", face = "bold", size = rel(1.1), margin = margin(b = 10)),
+      # Subtitle and caption: lighter weight 
+      plot.subtitle = element_text(family = "Public Sans Light", face = "plain"),
+      plot.caption = element_text(family = "Public Sans Light", face = "plain"),
+      # Axis text: Relative size
+      axis.text = element_text(size = rel(0.9)),
+      # Axis titles: Semibold and custom relative size
+      axis.title = element_text(family = "Public Sans Semibold", size = rel(0.9)),
+      axis.title.x = element_text(hjust = 0.5),
+      axis.title.y = element_text(hjust = 0.5),
+      # Axis lines
+      axis.line = element_line(color = "grey25", linewidth = 0.8),
+      # Facet labels: bold text on grey background
+      strip.text = element_text(
+        family = "Public Sans Semibold", face = "plain",
+        size = rel(1),
+        hjust = 0.5
+      ),
+      strip.background = element_rect(fill = "grey95", color = "grey25", linewidth = 0.8), 
+      # Legend styling: compact and top-positioned
+      legend.title = element_text(family = "Public Sans Semibold", size = rel(0.8)),
+      legend.text = element_text(size = rel(0.8)),
+      legend.position = "top",
+      legend.justification = "center",
+      legend.title.position = "left",
+      legend.margin = margin(l = 0, t = 0)
+    )
+}
+
+theme_set(theme_nice())
+update_geom_defaults("text", list(family = "Public Sans"))
+update_geom_defaults("label", list(family = "Public Sans"))
+```
+
+```{r}
+#| include: false
+data_dir <- here("01_data")
+table_dir <- here("02_output", "tables", "descriptives")
+figure_dir <- here("02_output", "figures", "descriptives")
+
+dir.create(table_dir, recursive = TRUE, showWarnings = TRUE)
+dir.create(figure_dir, recursive = TRUE, showWarnings = TRUE)
+```
+
+```{r}
+load(here(data_dir, "analysis", "df_wide.RData"))
+df <- df_wide 
+rm(df_wide)
+```
+
+## Metadata
+
+#### Fieldwork dates
+
+```{r}
+df |> 
+  summarise("Start Date" = min(date),
+            "End Date" = max(date)) |> 
+  tt()
+```
+
+```{r}
+df |> 
+  count(month = lubridate::floor_date(date, "month")) |> 
+  mutate(percent = n / sum(n)) |> 
+  tt()
+```
+
+#### Duration
+
+```{r}
+df |>
+  mutate(`Survey duration` = duration / 60,
+         `News duration` = exp_treatment_time / 60,
+         `Information duration` = exp_polinfo_time) |> 
+  select(`Survey duration`, `News duration`, `Information duration`) |>
+  datasummary_skim()
+```
+
+#### Attention 
+
+Final post-treatment attention check.
+
+```{r}
+df |> 
+  summarise(passed_num = sum(exp_attention == "Costs of living"),
+            passed_per = sum(exp_attention == "Costs of living") / nrow(df) * 100,
+            failed_num = sum(exp_attention != "Costs of living"),
+            failed_per = sum(exp_attention != "Costs of living") / nrow(df) * 100) |> 
+  tt()
+```
+
+## Socio-demographic distributions
+
+```{r}
+descriptive_table <- df |>  
+  select(
+    Age = age_group,
+    Gender = gender,
+    Region = region,
+    Urbanicity = urbanicity,
+    `Education Level` = education_level,
+    `Migration Background` = migration_background,
+    `Living Standard` = living_standard,
+  ) |> 
+  datasummary_skim(type = "categorical") |> 
+  style_tt(j = 1, align = "l") |> 
+  style_tt(j = 2:3, align = "c")
+
+descriptive_table |> 
+  save_tt(here(table_dir, "sample_descriptives.docx"), overwrite = T)
+
+descriptive_table
+```
+
+```{r}
+descriptive_exp_table <- df |>  
+  select(
+    Condition = exp_condition, 
+    Age = age_group,
+    Gender = gender,
+    Region = region,
+    Urbanicity = urbanicity,
+    `Education Level` = education_level,
+    `Migration Background` = migration_background,
+    `Living Standard` = living_standard,
+  ) |> 
+  droplevels() |> 
+  datasummary_balance(~Condition, data = _) |> 
+  style_tt(j = 1, align = "l") |> 
+  style_tt(j = 2:3, align = "c")
+
+descriptive_exp_table |> 
+  save_tt(here(table_dir, "by_condition_sample_descriptives.docx"), overwrite = T)
+
+descriptive_exp_table
+```
+
+#### Age
+
+```{r}
+age_table <- df |>  
+  select(Age = age) |> 
+  datasummary_skim(type = "numeric") |> 
+  style_tt(j = 1, align = "l") |> 
+  style_tt(j = 2:3, align = "c")
+
+age_table |> 
+  save_tt(here(table_dir, "age_descriptives.docx"), overwrite = T)
+
+age_table
+```
+
+```{r}
+#| fig-height: 4
+#| fig-width: 6
+#| fig-dpi: 600
+#| fig-showtext: true
+df |>
+  count(age) |>
+  mutate(percent = n / sum(n) * 100) |>
+  ggplot(aes(x = age, y = n)) +
+  geom_col(fill = "slateblue4", alpha = 0.6, color = "grey20", width = 0.8) +
+  geom_text(aes(label = paste0(round(percent, 1), "%")), 
+            vjust = -0.5, size = 3.5, color = "grey25") +
+  geom_vline(xintercept = mean(df$age, na.rm = TRUE), 
+             linetype = "dashed", color = "grey25", linewidth = 1) +
+  scale_x_continuous(breaks = 16:26) +
+  scale_y_continuous(breaks = seq(0, 400, by = 100), limits = c(0, 400)) +
+  labs(x = "Age", y = NULL, title = "Age Distribution") +
+  theme_nice() 
+
+ggsave(here(figure_dir, "age_distribution.svg"),
+       height = 4,
+       width = 6,
+       dpi = 600)
+```
+
+#### Correlations between key variables
+
+```{r}
+# Helper function to create correlogram
+scatter_function_grouped <- function(data, mapping, ...) {
+  ggplot(data = data, mapping = mapping) +
+    geom_point(alpha = 0.2, size = 1) +
+    geom_smooth(method = "lm", 
+                se = TRUE, 
+                linewidth = 1.2, 
+                alpha = 0.5, 
+                na.rm = TRUE)
+}
+```
+
+```{r}
+#| warning: false
+#| message: false
+#| fig-height: 12
+#| fig-width: 16
+#| fig-showtext: TRUE
+df |> 
+  mutate(age_group = as.character(age_group)) |> 
+  mutate(age_group = case_match(age_group,
+    "16-21 years" ~ "16-21",
+    "22-26 years" ~ "22-26"
+  )) |> 
+  select(
+    age_group,
+    age,
+    polpart = polpart_pomp,
+    dem_pre = dem_pomp,
+    aut_pre = aut_pomp,
+    aot_pre = aot_pomp,
+    cr_pre = cognitive_reappraisal_pomp,
+    es_pre = expressive_suppression_pomp,
+    exp_dem = exp_dem_pomp,
+    exp_polpart = exp_polpart_pomp
+  ) |> 
+  ggpairs(
+    data = _,
+    columns = 2:10,  
+    mapping = aes(color = age_group),
+    lower = list(continuous = scatter_function_grouped),
+    upper = list(continuous = wrap("cor", stars = TRUE, size = 4)),  
+    diag = list(continuous = wrap("densityDiag", alpha = 0.5)),
+    legend = 1,
+    progress = FALSE
+  ) +
+  scale_color_manual(values = c("16-21" = "#1b9e77",
+                                "22-26" = "#d95f02")) +
+  scale_fill_manual(values = c("16-21" = "#1b9e77",
+                                "22-26" = "#d95f02")) +
+  theme_nice() +
+  theme(legend.text = element_text(size = 16),
+        legend.title = element_text(size = 16)) + 
+  labs(color = "age_group", fill = "age_group")
+
+ggsave(here(figure_dir, "pre_var_correlogram.svg"),
+       height = 12,
+       width = 16,
+       dpi = 600)
+```
+
+## Experiment Checks
+
+#### Treatment assignment
+
+```{r}
+df |> 
+  count(exp_condition) |> 
+  tt()
+```
+
+```{r}
+df |> 
+  group_by(age_group) |> 
+  count(exp_condition) |> 
+  tt()
+```
+
+#### Survey outcomes
+
+```{r}
+df |> 
+  select(Treatment = exp_condition,
+         Age = age_group,
+         exp_dem_pomp, 
+         exp_polpart_pomp) |> 
+  datasummary_balance(~Treatment,
+                      by = "Age",
+                      data = _)
+```
+
+```{r}
+df |> 
+  select(Treatment = exp_condition,
+         Age = age_group,
+         exp_dem_pomp, 
+         exp_polpart_pomp) |> 
+  datasummary(Age * (exp_dem_pomp + exp_polpart_pomp) ~ 
+                Treatment * (Mean + SD),
+              data = _,
+              fmt = 1)
+```
+
+```{r}
+dem_exp_fig <- df |> 
+  ggplot(aes(x = exp_condition, y = exp_dem_pomp, fill = exp_condition, color = exp_condition)) +
+  geom_rain(
+    rain.side = "r",  
+    seed = 42,
+    point.args = list(alpha = 0.2, size = 0.8),  
+    boxplot.args = list(
+      outlier.shape = NA,
+      alpha = 0.7,
+      color = "black"  
+    ),
+    violin.args = list(alpha = 0.7)
+  ) +
+  geom_signif(
+    aes(x = exp_condition, y = exp_dem_pomp),  
+    comparisons = list(
+      c("anxiety", "hope"), 
+      c("anxiety", "control"), 
+      c("hope", "control")
+    ),
+    map_signif_level = TRUE,
+    size = 0.8,
+    textsize = 4,
+    family = "Public Sans",
+    color = "black",
+    tip_length = 0,
+    step_increase = 0.12,
+    inherit.aes = FALSE
+  ) +
+  scale_fill_brewer(palette = "Dark2") +
+  scale_color_brewer(palette = "Dark2") +
+  scale_y_continuous(expand = expansion(mult = c(0.05, 0.15))) +
+  labs(
+    x = NULL,
+    y = "Democratic Support",
+    title = "Democratic Support by Experimental Condition"
+  ) +
+  theme_nice() +
+  theme(legend.position = "none") 
+
+dem_exp_fig
+```
+
+```{r}
+polpart_exp_fig <- df |> 
+  ggplot(aes(x = exp_condition, y = exp_polpart_pomp, fill = exp_condition, color = exp_condition)) +
+  geom_rain(
+    rain.side = "r",  
+    seed = 42,
+    point.args = list(alpha = 0.2, size = 0.8),  
+    boxplot.args = list(
+      outlier.shape = NA,
+      alpha = 0.7,
+      color = "black"  
+    ),
+    violin.args = list(alpha = 0.7)
+  ) +
+  geom_signif(
+    aes(x = exp_condition, y = exp_polpart_pomp),  
+    comparisons = list(
+      c("anxiety", "hope"), 
+      c("anxiety", "control"), 
+      c("hope", "control")
+    ),
+    map_signif_level = TRUE,
+    size = 0.8,
+    textsize = 4,
+    family = "Public Sans",
+    color = "black",
+    tip_length = 0,
+    step_increase = 0.12,
+    inherit.aes = FALSE
+  ) +
+  scale_fill_brewer(palette = "Dark2", direction = -1) +
+  scale_color_brewer(palette = "Dark2", direction = -1) +
+  scale_y_continuous(expand = expansion(mult = c(0.05, 0.15))) +
+  labs(
+    x = NULL,
+    y = "Political Participation",
+    title = "Political Participation by Experimental Condition"
+  ) +
+  theme_nice() +
+  theme(legend.position = "none") 
+
+polpart_exp_fig 
+```
+
+
+
+
+

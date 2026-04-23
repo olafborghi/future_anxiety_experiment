@@ -1,0 +1,1490 @@
+---
+title: "Exploratory: Post Engagement"
+description: "How did participants react to the posts?" 
+
+format:
+  html:
+    theme: paper
+    shift-heading-level-by: 1
+    code-tools: true
+    code-fold: true
+    toc: true
+    toc-fold: false
+    toc-location: right
+    toc-depth: 4
+    toc-title: "Contents"
+
+# Portability settings
+embed-resources: true
+
+# Execution options 
+execute:
+  warning: false
+---
+
+```{r}
+#| include: false
+# set error messages to English
+Sys.setenv(LANG = "en")
+
+knitr::opts_chunk$set(
+  fig.align = "center", 
+  fig.retina = 3,
+  fig.width = 6, 
+  fig.height = (6 * 0.618),
+  out.width = "90%", 
+  collapse = FALSE
+)
+
+options(
+  digits = 4,
+  width = 300,
+  dplyr.summarise.inform = FALSE)
+```
+
+```{r}
+#| include: false
+#| warning: true
+#| message: true
+if (!require("groundhog", quietly = TRUE)) {
+  install.packages("groundhog")
+}
+library("groundhog")
+
+# use groundhog to install and load packages
+pkgs <- c("here",         # System path management
+          "tidyverse",    # ggplot, dplyr, and friends
+          "brms",         # Bayesian regression modelling in Stan
+          "broom.mixed",  # Tidy model outputs
+          "marginaleffects", # Model-based predictions, comparisons, and more marginalia
+          "tidybayes",    # Tools to work with Bayesian models 
+          "tinytable",    # Minimalist tables
+          "rstatix",      # Basic tidy statistical tests 
+          "modelsummary", # Data and model summaries with tables and plots
+          "marginaleffects", # Model-based predictions, comparisons, and more marginalia
+          "ggdist",       # Additional plot elements
+          "ggrain",       # For fancy raincloud plots
+          "GGally",       # ggpairs and other ggplot2 friends
+          "emojifont",    # Emojis in GGPlot2
+          "ggsignif",     # Add significance to figures
+          "patchwork",    # Combine multiple ggplots
+          "showtext"      # Additional fonts for plots etc
+          )
+
+groundhog.library(pkgs, "2026-01-01")
+```
+
+```{r}
+#| include: false
+# I use the faster cmdstanr backend for Stan in the place of rstan
+# to do so install the cmdstanr package first: https://mc-stan.org/cmdstanr/
+# Then run cmdstanr::install_cmdstan() to install cmdstan on your computer.
+# RTools must be installed. For more info see 
+# https://mc-stan.org/cmdstanr/articles/cmdstanr.html#introduction
+
+# install.packages("cmdstanr", repos = c('https://stan-dev.r-universe.dev', getOption("repos")))
+# cmdstanr::install_cmdstan()
+
+options(mc.cores = 4,  
+        brms.backend = "cmdstanr")
+```
+
+```{r}
+#| include: false
+
+showtext_auto()
+showtext_opts(dpi = 600)
+
+font_add_google("Public Sans", "Public Sans")
+font_add_google("Public Sans", "Public Sans Light", regular.wt = 300)
+font_add_google("Public Sans", "Public Sans Semibold", regular.wt = 600)
+
+# Custom ggplot theme
+theme_nice <- function(base_size = 14) {
+  # General text family and base size
+  theme_minimal(base_family = "Public Sans", base_size = base_size) +
+    theme(
+      # Remove minor grid lines for cleaner look
+      panel.grid.minor = element_blank(),
+      # Customize major grid lines color
+      panel.grid.major = element_blank(),
+      # Plot title: bold and custom relative size
+      plot.title = element_text(family = "Public Sans", face = "bold", size = rel(1.1), margin = margin(b = 10)),
+      # Subtitle and caption: lighter weight 
+      plot.subtitle = element_text(family = "Public Sans Light", face = "plain"),
+      plot.caption = element_text(family = "Public Sans Light", face = "plain"),
+      # Axis text: Relative size
+      axis.text = element_text(size = rel(0.9)),
+      # Axis titles: Semibold and custom relative size
+      axis.title = element_text(family = "Public Sans Semibold", size = rel(0.9)),
+      axis.title.x = element_text(hjust = 0.5),
+      axis.title.y = element_text(hjust = 0.5),
+      # Axis lines
+      axis.line = element_line(color = "grey25", linewidth = 0.8),
+      # Facet labels: bold text on grey background
+      strip.text = element_text(
+        family = "Public Sans Semibold", face = "plain",
+        size = rel(1),
+        hjust = 0.5
+      ),
+      strip.background = element_rect(fill = "grey95", color = "grey25", linewidth = 0.8), 
+      # Legend styling: compact and top-positioned
+      legend.title = element_text(family = "Public Sans Semibold", size = rel(0.8)),
+      legend.text = element_text(size = rel(0.8)),
+      legend.position = "top",
+      legend.justification = "center",
+      legend.title.position = "left",
+      legend.margin = margin(l = 0, t = 0)
+    )
+}
+
+
+theme_set(theme_nice())
+update_geom_defaults("text", list(family = "Public Sans"))
+update_geom_defaults("label", list(family = "Public Sans"))
+```
+
+```{r}
+#| include: false
+data_dir <- here("01_data")
+table_dir <- here("02_output", "tables", "exploratory")
+figure_dir <- here("02_output", "figures", "exploratory")
+
+dir.create(table_dir, recursive = TRUE, showWarnings = TRUE)
+dir.create(figure_dir, recursive = TRUE, showWarnings = TRUE)
+```
+
+```{r}
+load(here(data_dir, "analysis", "df_wide.RData"))
+df <- df_wide 
+rm(df_wide)
+```
+
+## Manipulation Checks
+
+```{r}
+manip_balance_table <- df |> 
+  select(Treatment = exp_condition,
+         "Anxiety-Hope" = anxiety_hope_dim,
+         "Anxiety Rating" = exp_check_anxious,
+         "Angry Rating" = exp_check_angry,
+         "Hopeful Rating" = exp_check_hopeful,
+         "Happy Rating" = exp_check_happy,
+         "Calm Rating" = exp_check_calm,
+         "Comment Sentiment" = exp_comment_sentiment) |> 
+  mutate(Treatment = factor(Treatment, levels = c("anxiety", "hope", "control"), 
+                            labels = c("Anxiety", "Hope", "Control"))) |> 
+  datasummary_balance(~Treatment, 
+                      data = _,
+                      fmt = 2)
+
+manip_balance_table |> 
+  save_tt(here(table_dir, "manipulation_balance.docx"), overwrite = TRUE)
+
+manip_balance_table
+```
+
+```{r}
+#| fig-height: 5
+#| fig-width: 8
+#| fig-showtext: TRUE
+manip_check_data <- df |>
+  select(id, exp_condition, starts_with("exp_check")) |>
+  pivot_longer(
+    cols = starts_with("exp_check"),
+    names_to = "emotion",
+    values_to = "rating",
+    names_prefix = "exp_check_"
+  ) |>
+  mutate(
+    emotion = factor(emotion, 
+                     levels = c("angry", "anxious", "hopeful", "happy", "calm"), 
+                     labels = c("Angry", "Anxious", "Hopeful", "Happy", "Calm"))
+  )
+
+# Define emotion colors
+emotion_colors <- c(
+  "Angry" = "#e07a7a",
+  "Anxious" = "#f4a582",
+  "Hopeful" = "#a8ddb5",
+  "Happy" = "#ffd97d",
+  "Calm" = "#7eb3d4"
+)
+
+manip_check_data |> 
+  ggplot(aes(x = exp_condition, y = rating, fill = emotion)) +
+  geom_boxplot(
+    position = position_dodge(width = 0.9),
+    width = 0.6,
+    outlier.size = 0.8,
+    outlier.alpha = 0.3
+  ) +
+  scale_fill_manual(
+    values = emotion_colors,
+    name = "Emotion"
+  ) +
+  scale_x_discrete(
+    labels = c("anxiety" = "Anxiety", "hope" = "Hope", "control" = "Control")
+  ) +
+  scale_y_continuous(
+    limits = c(-10, 110),
+    breaks = seq(0, 100, 20),
+    expand = c(0.05, 0.05)
+  ) +
+  labs(
+    x = "Experimental Condition",
+    y = "Emotion Rating (0-100)",
+    subtitle = "Thinking back to the Instagram post that you saw earlier, 
+to what extent did the post make you feel …"
+  ) +
+  theme_nice() +
+  guides(fill = guide_legend(override.aes = list(shape = NA)))
+
+ggsave(here(figure_dir, "manipulation_check.svg"),
+       height = 5,
+       width = 8,
+       dpi = 600)
+```
+
+```{r}
+manip_pairwise <- manip_check_data |>
+  group_by(emotion) |>
+  pairwise_t_test(
+    rating ~ exp_condition,
+    detailed = TRUE,
+    pool.sd = FALSE,
+    p.adjust.method = "holm",
+    ref.group = "control"
+  ) |>
+  ungroup()
+
+manip_pairwise_table <- manip_pairwise |>
+  select(Emotion = emotion, 
+         `Group 1` = group1, 
+         `Group 2` = group2, 
+         `Mean 1` = estimate1,
+         `Mean 2` = estimate2, 
+         `Estimate` = estimate,
+         # "95% CI Low" = conf.low,
+         # "95% CI High" = conf.high, 
+         p, p.adj,
+         # p.adj.signif,
+         df) |>
+  mutate(across(where(is.numeric), \(x) round(x, 3))) |> 
+  tt()
+
+manip_pairwise_table
+
+manip_pairwise_table |> 
+  save_tt(here(table_dir, "manipulation_pairwise.docx"), overwrite = TRUE)
+```
+
+```{r}
+# Helper function to create correlogram
+scatter_function_grouped <- function(data, mapping, ...) {
+  ggplot(data = data, mapping = mapping) +
+    geom_point(alpha = 0.2, size = 1) +
+    geom_smooth(method = "lm", 
+                se = TRUE, 
+                linewidth = 1.2, 
+                alpha = 0.5, 
+                na.rm = TRUE)
+}
+```
+
+```{r}
+#| warning: false
+#| message: false
+#| fig-height: 12
+#| fig-width: 16
+#| fig-showtext: TRUE
+df |> 
+  mutate(age_group = as.character(age_group)) |> 
+  mutate(age_group = case_match(age_group,
+    "16-21 years" ~ "16-21",
+    "22-26 years" ~ "22-26"
+  )) |> 
+  select(
+    age_group,
+    age,
+    "a-h" = anxiety_hope_dim,
+    agr = exp_check_angry,
+    axy = exp_check_anxious,
+    hop = exp_check_hopeful,
+    hap = exp_check_happy,
+    cal = exp_check_calm,
+    sent = exp_comment_sentiment,
+    exp_dem = exp_dem_pomp,
+    exp_polpart = exp_polpart_pomp
+  ) |> 
+  ggpairs(
+    data = _,
+    columns = 2:11,  
+    mapping = aes(color = age_group),
+    lower = list(continuous = scatter_function_grouped),
+    upper = list(continuous = wrap("cor", stars = TRUE, size = 4)),  
+    diag = list(continuous = wrap("densityDiag", alpha = 0.5)),
+    legend = 1,
+    progress = FALSE
+  ) +
+  scale_color_manual(values = c("16-21" = "#1b9e77",
+                                "22-26" = "#d95f02")) +
+  scale_fill_manual(values = c("16-21" = "#1b9e77",
+                                "22-26" = "#d95f02")) +
+  theme_nice() +
+  theme(legend.text = element_text(size = 16),
+        legend.title = element_text(size = 16)) + 
+  labs(color = "age_group", fill = "age_group")
+
+ggsave(here(figure_dir, "manip_correlogram.svg"),
+       height = 12,
+       width = 16,
+       dpi = 600)
+```
+
+## Time Spent Viewing the Post
+
+
+## Comments, Liking, Sharing
+
+```{r}
+df |> 
+  select(Treatment = exp_condition,
+         exp_comment_emotion,
+         exp_reaction, 
+         exp_like, 
+         exp_share) |> 
+  mutate(Treatment = factor(Treatment, levels = c("anxiety", "hope", "control"), 
+                            labels = c("Anxiety", "Hope", "Control"))) |> 
+  datasummary_balance(~Treatment, 
+                      data = _)
+```
+
+
+### Sharing of Post
+
+```{r}
+#| fig-height: 4
+#| fig-width: 6
+#| fig-showtext: TRUE
+df |> 
+  mutate(exp_share = as.numeric(exp_share)) |> 
+  ggplot(aes(x = exp_condition, y = exp_share, fill = exp_condition, color = exp_condition)) +
+  geom_rain(
+    rain.side = "r",  
+    seed = 42,
+    point.args = list(alpha = 0.2, size = 0.8),  
+    boxplot.args = list(
+      outlier.shape = NA,
+      alpha = 0.7,
+      color = "black"  
+    ),
+    violin.args = list(alpha = 0.7)
+  ) +
+  geom_signif(
+    aes(x = exp_condition, y = exp_share),  
+    comparisons = list(
+      c("anxiety", "hope"), 
+      c("anxiety", "control"), 
+      c("hope", "control")
+    ),
+    map_signif_level = TRUE,
+    size = 0.8,
+    textsize = 4,
+    family = "Public Sans",
+    color = "black",
+    tip_length = 0,
+    step_increase = 0.12,
+    inherit.aes = FALSE
+  ) +
+  scale_fill_brewer(palette = "Dark2") +
+  scale_color_brewer(palette = "Dark2") +
+  scale_y_continuous(expand = expansion(mult = c(0.05, 0.15))) +
+  labs(
+    x = NULL,
+    y = "1-5 Likert Scale",
+    title = "Likelihood to Share Post by Experimental Condition"
+  ) +
+  theme_nice() +
+  theme(legend.position = "none") 
+
+ggsave(here(figure_dir, "share_raincloud.svg"),
+       height = 4,
+       width = 6,
+       dpi = 600)
+```
+
+```{r}
+share_pairwise <- df |>
+  mutate(exp_share = as.numeric(exp_share)) |>
+  pairwise_t_test(
+    exp_share ~ exp_condition,
+    detailed = TRUE,
+    pool.sd = FALSE,
+    p.adjust.method = "holm",
+    # ref.group = "control"
+  ) 
+
+share_pairwise_table <- share_pairwise |>
+  select(`Group 1` = group1,
+         `Group 2` = group2,
+         `Mean 1` = estimate1,
+         `Mean 2` = estimate2,
+         `Estimate` = estimate,
+         # "95% CI Low" = conf.low,
+         # "95% CI High" = conf.high,
+         p, p.adj,
+         # p.adj.signif,
+         df) |>
+  mutate(across(where(is.numeric), \(x) round(x, 3))) |>
+  tt()
+
+share_pairwise_table
+
+share_pairwise_table |>
+  save_tt(here(table_dir, "share_pairwise.docx"), overwrite = TRUE)
+```
+
+### Liking of Post
+
+```{r}
+#| fig-height: 4
+#| fig-width: 6
+#| fig-showtext: TRUE
+df |> 
+  mutate(exp_like = as.numeric(exp_like)) |> 
+  ggplot(aes(x = exp_condition, y = exp_like, fill = exp_condition, color = exp_condition)) +
+  geom_rain(
+    rain.side = "r",  
+    seed = 42,
+    point.args = list(alpha = 0.2, size = 0.8),  
+    boxplot.args = list(
+      outlier.shape = NA,
+      alpha = 0.7,
+      color = "black"  
+    ),
+    violin.args = list(alpha = 0.7)
+  ) +
+  geom_signif(
+    aes(x = exp_condition, y = exp_like),  
+    comparisons = list(
+      c("anxiety", "hope"), 
+      c("anxiety", "control"), 
+      c("hope", "control")
+    ),
+    map_signif_level = TRUE,
+    size = 0.8,
+    textsize = 4,
+    family = "Public Sans",
+    color = "black",
+    tip_length = 0,
+    step_increase = 0.12,
+    inherit.aes = FALSE
+  ) +
+  scale_fill_brewer(palette = "Dark2") +
+  scale_color_brewer(palette = "Dark2") +
+  scale_y_continuous(expand = expansion(mult = c(0.05, 0.15))) +
+  labs(
+    x = NULL,
+    y = "1-5 Likert Scale",
+    title = "Likelihood to Like Post by Experimental Condition"
+  ) +
+  theme_nice() +
+  theme(legend.position = "none") 
+
+ggsave(here(figure_dir, "like_raincloud.svg"),
+       height = 4,
+       width = 6,
+       dpi = 600)
+```
+
+```{r}
+like_pairwise <- df |>
+  mutate(exp_like = as.numeric(exp_like)) |>
+  pairwise_t_test(
+    exp_like ~ exp_condition,
+    detailed = TRUE,
+    pool.sd = FALSE,
+    p.adjust.method = "holm",
+    # ref.group = "control"
+  ) 
+
+like_pairwise_table <- like_pairwise |>
+  select(`Group 1` = group1,
+         `Group 2` = group2,
+         `Mean 1` = estimate1,
+         `Mean 2` = estimate2,
+         `Estimate` = estimate,
+         # "95% CI Low" = conf.low,
+         # "95% CI High" = conf.high,
+         p, p.adj,
+         # p.adj.signif,
+         df) |>
+  mutate(across(where(is.numeric), \(x) round(x, 3))) |>
+  tt()
+
+like_pairwise_table
+
+like_pairwise_table |>
+  save_tt(here(table_dir, "like_pairwise.docx"), overwrite = TRUE)
+```
+
+## Exploratory Manipulation Check Models
+
+```{r}
+# brms settings
+bayes_seed <- 42
+chains <- 4
+iter <- 4000
+warmup <- floor(iter/2)
+adapt_delta <- 0.90
+max_treedepth <- 10
+```
+
+```{r}
+# marginaleffects settings
+options(marginaleffects_posterior_interval = "hdi")
+options(marginaleffects_posterior_center = stats::median)
+```
+
+```{r}
+df_mod <- df |> 
+  mutate(across(c(exp_share, exp_like), as.numeric)) |> 
+  mutate(exp_share_pomp = (exp_share - 1) / 4,
+         exp_like_pomp = (exp_like - 1) / 4,
+         comment_sentiment_pomp = (exp_comment_sentiment - 1) / 6,
+         Anxious = exp_check_anxious / 100,
+         Angry = exp_check_angry / 100,
+         Hopeful = exp_check_hopeful / 100,
+         Happy = exp_check_happy / 100,
+         Calm = exp_check_calm / 100)
+```
+
+
+```{r}
+priors <- c(
+  prior(normal(0.5, 0.5), class = "Intercept"),
+  prior(normal(0, 0.5), class = "b"),
+  prior(exponential(4), class = "sigma"))
+```
+
+### Anxiety-Hope Dimension
+
+```{r}
+#| output: false
+ah1 <- brm(
+  data = df_mod,
+  family = gaussian(),
+  formula = anxiety_hope_dim ~ exp_condition,
+  prior = priors,
+  sample_prior = "yes",
+  init = "random",
+  chains = chains,
+  iter = iter,
+  warmup = warmup,
+  seed = bayes_seed,
+  control = list(
+    adapt_delta = adapt_delta,
+    max_treedepth = max_treedepth)
+  )
+```
+
+```{r}
+print(ah1)
+```
+### Sentiment
+
+```{r}
+#| output: false
+sent1 <- brm(
+  data = df_mod,
+  family = gaussian(),
+  formula = comment_sentiment_pomp ~ exp_condition,
+  prior = priors,
+  sample_prior = "yes",
+  init = "random",
+  chains = chains,
+  iter = iter,
+  warmup = warmup,
+  seed = bayes_seed,
+  control = list(
+    adapt_delta = adapt_delta,
+    max_treedepth = max_treedepth)
+  )
+```
+
+```{r}
+print(sent1)
+```
+### Sharing of Post
+
+```{r}
+#| output: false
+share1 <- brm(
+  data = df_mod,
+  family = gaussian(),
+  formula = exp_share_pomp ~ exp_condition,
+  prior = priors,
+  sample_prior = "yes",
+  init = "random",
+  chains = chains,
+  iter = iter,
+  warmup = warmup,
+  seed = bayes_seed,
+  control = list(
+    adapt_delta = adapt_delta,
+    max_treedepth = max_treedepth)
+  )
+```
+
+```{r}
+print(share1)
+```
+
+### Liking of Post
+
+```{r}
+#| output: false
+like1 <- brm(
+  data = df_mod,
+  family = gaussian(),
+  formula = exp_like_pomp ~ exp_condition,
+  prior = priors,
+  sample_prior = "yes",
+  init = "random",
+  chains = chains,
+  iter = iter,
+  warmup = warmup,
+  seed = bayes_seed,
+  control = list(
+    adapt_delta = adapt_delta,
+    max_treedepth = max_treedepth)
+  )
+```
+
+```{r}
+print(like1)
+```
+
+### Emotion Ratings
+
+```{r}
+# Create formula with set_rescor
+f_er1 <- bf(mvbind(Anxious, Angry, Hopeful, Happy, Calm) ~ exp_condition) + 
+  set_rescor(FALSE)
+
+# Specify priors for each response variable
+priors_er1 <- c(
+  prior(normal(0.5, 0.5), class = "Intercept", resp = "Anxious"),
+  prior(normal(0.5, 0.5), class = "Intercept", resp = "Angry"),
+  prior(normal(0.5, 0.5), class = "Intercept", resp = "Hopeful"),
+  prior(normal(0.5, 0.5), class = "Intercept", resp = "Happy"),
+  prior(normal(0.5, 0.5), class = "Intercept", resp = "Calm"),
+  prior(normal(0, 0.5), class = "b", resp = "Anxious"),
+  prior(normal(0, 0.5), class = "b", resp = "Angry"),
+  prior(normal(0, 0.5), class = "b", resp = "Hopeful"),
+  prior(normal(0, 0.5), class = "b", resp = "Happy"),
+  prior(normal(0, 0.5), class = "b", resp = "Calm"),
+  prior(exponential(4), class = "sigma", resp = "Anxious"),
+  prior(exponential(4), class = "sigma", resp = "Angry"),
+  prior(exponential(4), class = "sigma", resp = "Hopeful"),
+  prior(exponential(4), class = "sigma", resp = "Happy"),
+  prior(exponential(4), class = "sigma", resp = "Calm")
+)
+```
+
+
+```{r}
+#|output: false
+er1 <- brm(
+  data = df_mod,
+  family = gaussian(),
+  formula = f_er1,
+  prior = priors_er1,
+  sample_prior = "yes",
+  init = "random",
+  chains = chains,
+  iter = iter,
+  warmup = warmup,
+  seed = bayes_seed,
+  control = list(
+    adapt_delta = adapt_delta,
+    max_treedepth = max_treedepth
+  )
+)
+```
+
+```{r}
+print(er1)
+```
+
+## Visualise
+
+### Part 1
+
+```{r}
+# Prepare predictions for all models
+models_list <- list(
+  ah1 = ah1,
+  sent1 = sent1,
+  share1 = share1,
+  like1 = like1
+)
+
+outcome_labels <- c(
+  ah1 = "Anxiety-Hope Dimension",
+  sent1 = "Comment Sentiment",
+  share1 = "Likelihood to Share",
+  like1 = "Likelihood to Like"
+)
+
+predictions <- map_dfr(names(models_list), function(model_name) {
+  expand_grid(
+    exp_condition = c("control", "anxiety", "hope")
+  ) |>
+    add_epred_draws(models_list[[model_name]], re_formula = NA, ndraws = 4000) |>
+    ungroup() |>
+    mutate(
+      outcome = model_name,
+      outcome_label = outcome_labels[model_name],
+      .epred = .epred * 100  # Convert to percentage points
+    )
+})
+
+# Calculate pairwise contrasts and check if they exclude zero
+contrasts <- predictions |>
+  select(outcome, outcome_label, exp_condition, .draw, .epred) |>
+  pivot_wider(names_from = exp_condition, values_from = .epred) |>
+  mutate(
+    anxiety_vs_control = anxiety - control,
+    hope_vs_control = hope - control,
+    anxiety_vs_hope = anxiety - hope
+  )
+
+contrast_summary <- contrasts |>
+  group_by(outcome, outcome_label) |>
+  summarise(
+    across(
+      c(anxiety_vs_control, hope_vs_control, anxiety_vs_hope),
+      list(
+        lower = ~hdi(.x, .width = 0.95)[[1]],
+        upper = ~hdi(.x, .width = 0.95)[[2]]
+      ),
+      .names = "{.col}_{.fn}"
+    ),
+    .groups = "drop"
+  ) |>
+  mutate(
+    anxiety_diff_control = sign(anxiety_vs_control_lower) == sign(anxiety_vs_control_upper),
+    hope_diff_control = sign(hope_vs_control_lower) == sign(hope_vs_control_upper),
+    anxiety_diff_hope = sign(anxiety_vs_hope_lower) == sign(anxiety_vs_hope_upper)
+  )
+
+# Generate compact letter display
+cld_labels <- contrast_summary |>
+  mutate(
+    control_label = case_when(
+      # Intransitivity: control bridges anxiety and hope
+      !anxiety_diff_control & !hope_diff_control & anxiety_diff_hope ~ "ab",
+      TRUE ~ "a"
+    ),
+    anxiety_label = case_when(
+      # Anxiety bridges control and hope
+      !anxiety_diff_control & hope_diff_control & !anxiety_diff_hope ~ "ab",
+      # Anxiety same as control
+      !anxiety_diff_control & !anxiety_diff_hope              ~ "a",
+      !anxiety_diff_control & anxiety_diff_hope               ~ "a",
+      # Anxiety differs from control
+      anxiety_diff_control  & !anxiety_diff_hope              ~ "b",
+      anxiety_diff_control  & anxiety_diff_hope               ~ "b"
+    ),
+    hope_label = case_when(
+      # Hope bridges control and anxiety
+      !hope_diff_control & !anxiety_diff_hope & anxiety_diff_control  ~ "ab",
+      # Intransitivity: hope=b (control bridges)
+      !hope_diff_control & anxiety_diff_hope  & !anxiety_diff_control ~ "b",
+      # All same
+      !hope_diff_control & !anxiety_diff_hope & !anxiety_diff_control ~ "a",
+      # Hope~control, anxiety differs from both
+      !hope_diff_control & anxiety_diff_hope  & anxiety_diff_control  ~ "a",
+      # Hope differs from control
+      hope_diff_control  & !anxiety_diff_hope                         ~ "b",
+      hope_diff_control  & anxiety_diff_hope  ~ if_else(anxiety_diff_control, "c", "b")
+    )
+  ) |>
+  select(outcome, outcome_label, control_label, anxiety_label, hope_label) |>
+  pivot_longer(
+    cols = c(control_label, anxiety_label, hope_label),
+    names_to = "condition",
+    values_to = "cld"
+  ) |>
+  mutate(exp_condition = str_remove(condition, "_label")) |>
+  select(outcome, outcome_label, exp_condition, cld)
+
+# Combine plotting data with CLD labels
+plot_data <- predictions |>
+  left_join(cld_labels, by = c("outcome", "outcome_label", "exp_condition"))
+
+# Check the CLD labels
+cld_labels |> 
+  pivot_wider(names_from = exp_condition, values_from = cld) |>
+  arrange(outcome)
+```
+
+```{r}
+part1 <- plot_data |>
+  mutate(
+    outcome_label = factor(
+      outcome_label,
+      levels = c("Anxiety-Hope Dimension", "Comment Sentiment", 
+                 "Likelihood to Share", "Likelihood to Like")
+    ),
+    exp_condition = factor(
+      exp_condition,
+      levels = c("hope", "anxiety", "control"),
+      labels = c("Hope", "Anxiety", "Control")
+    )
+  ) |>
+  ggplot(aes(x = .epred, y = exp_condition, fill = exp_condition)) +
+  stat_halfeye(
+    .width = c(0.95, 0.66),
+    point_interval = "median_qi",
+    alpha = 0.8,
+    height = 0.8
+  ) +
+  geom_text(
+    data = plot_data |>
+      mutate(
+        outcome_label = factor(
+          outcome_label,
+          levels = c("Anxiety-Hope Dimension", "Comment Sentiment",
+                     "Likelihood to Share", "Likelihood to Like")
+        ),
+        exp_condition = factor(
+          exp_condition,
+          levels = c("hope", "anxiety", "control"),
+          labels = c("Hope", "Anxiety", "Control")
+        )
+      ) |>
+      group_by(outcome_label, exp_condition, cld) |>
+      summarise(x_pos = max(.epred) + 2, .groups = "drop"),
+    aes(x = x_pos, y = exp_condition, label = cld),
+    size = 4,
+    fontface = "bold",
+    inherit.aes = FALSE
+  ) +
+  geom_vline(xintercept = 50, linetype = "dashed", color = "gray40", linewidth = 0.4) +
+  facet_wrap(~outcome_label, scales = "free_x", ncol = 2, labeller = labeller(label_both)) +
+  scale_fill_manual(
+    values = c("Anxiety" = "#AA3377", "Hope" = "#66CCEE", "Control" = "#BBBBBB")
+  ) +
+  scale_x_continuous(limits = c(25, 75), breaks = seq(20, 80, by = 10)) +
+  labs(
+    x = "Percentage Points",
+    y = NULL,
+    title = "Manipulation Check & Post Engagement",
+    tag = "I."
+  ) +
+  theme_nice() +
+  theme(
+    legend.position = "none",
+    panel.grid.major.x = element_line(color = "grey90", linewidth = 0.2),
+    strip.text = element_text(hjust = 0.5, size = rel(0.95)),
+    plot.title = element_text(family = "Public Sans", face = "bold", size = rel(1), margin = margin(b = 5))
+  )
+
+part1
+
+ggsave(here(figure_dir, "manip_engagement_fig.svg"),
+       height = 5,
+       width = 6,
+       dpi = 600)
+```
+
+### Part 2
+
+```{r}
+# Extract predictions for all emotions
+emotion_predictions <- expand_grid(
+  exp_condition = c("control", "anxiety", "hope")
+) |>
+  add_epred_draws(er1, re_formula = NA, ndraws = 4000) |>
+  ungroup() |>
+  mutate(.epred = .epred * 100)
+
+# Calculate pairwise contrasts
+emotion_contrasts <- emotion_predictions |>
+  select(.category, exp_condition, .draw, .epred) |>
+  pivot_wider(names_from = exp_condition, values_from = .epred) |>
+  mutate(
+    anxiety_vs_control = anxiety - control,
+    hope_vs_control = hope - control,
+    anxiety_vs_hope = anxiety - hope
+  )
+
+emotion_contrast_summary <- emotion_contrasts |>
+  group_by(.category) |>
+  summarise(
+    across(
+      c(anxiety_vs_control, hope_vs_control, anxiety_vs_hope),
+      list(
+        lower = ~hdi(.x, .width = 0.95)[[1]],
+        upper = ~hdi(.x, .width = 0.95)[[2]]
+      ),
+      .names = "{.col}_{.fn}"
+    ),
+    .groups = "drop"
+  ) |>
+  mutate(
+    anxiety_diff_control = sign(anxiety_vs_control_lower) == sign(anxiety_vs_control_upper),
+    hope_diff_control = sign(hope_vs_control_lower) == sign(hope_vs_control_upper),
+    anxiety_diff_hope = sign(anxiety_vs_hope_lower) == sign(anxiety_vs_hope_upper)
+  )
+
+# Generate compact letter display
+emotion_cld <- emotion_contrast_summary |>
+  mutate(
+    control_label = case_when(
+      !anxiety_diff_control & !hope_diff_control & anxiety_diff_hope ~ "ab",
+      TRUE ~ "a"
+    ),
+    anxiety_label = case_when(
+      !anxiety_diff_control & hope_diff_control & !anxiety_diff_hope ~ "ab",
+      !anxiety_diff_control & !anxiety_diff_hope                     ~ "a",
+      !anxiety_diff_control & anxiety_diff_hope                      ~ "a",
+      anxiety_diff_control  & !anxiety_diff_hope                     ~ "b",
+      anxiety_diff_control  & anxiety_diff_hope                      ~ "b"
+    ),
+    hope_label = case_when(
+      !hope_diff_control & !anxiety_diff_hope & anxiety_diff_control  ~ "ab",
+      !hope_diff_control & anxiety_diff_hope  & !anxiety_diff_control ~ "b",
+      !hope_diff_control & !anxiety_diff_hope & !anxiety_diff_control ~ "a",
+      !hope_diff_control & anxiety_diff_hope  & anxiety_diff_control  ~ "a",
+      hope_diff_control  & !anxiety_diff_hope                         ~ "b",
+      hope_diff_control  & anxiety_diff_hope  ~ if_else(anxiety_diff_control, "c", "b")
+    )
+  ) |>
+  select(.category, control_label, anxiety_label, hope_label) |>
+  pivot_longer(
+    cols = c(control_label, anxiety_label, hope_label),
+    names_to = "condition",
+    values_to = "cld"
+  ) |>
+  mutate(exp_condition = str_remove(condition, "_label")) |>
+  select(.category, exp_condition, cld)
+
+# Combine plotting data
+emotion_plot_data <- emotion_predictions |>
+  left_join(emotion_cld, by = c(".category", "exp_condition"))
+
+# Set colors
+# emotion_colors <- c(
+#   "Anxious" = "#CC3311",
+#   "Angry" = "#EE7733",
+#   "Calm" = "#009988",
+#   "Hopeful" = "#33BBEE",
+#   "Happy" = "#0077BB"
+# )
+
+emotion_colors <- c(
+  "Anxious" = "#AA3377",
+  "Angry" = "#EE6677",
+  "Calm" = "#CCBB44",
+  "Hopeful" = "#66CCEE",
+  "Happy" = "#4477AA"
+)
+
+```
+
+```{r}
+part2 <- emotion_plot_data |>
+  mutate(
+    emotion = factor(
+      .category,
+      levels = c("Anxious", "Angry", "Calm", "Hopeful", "Happy"),
+      labels = c("Anxious", "Angry", "Calm", "Hopeful", "Happy")
+    ),
+    exp_condition = factor(
+      exp_condition,
+      levels = c("control", "anxiety", "hope"),
+      labels = c("Control", "Anxiety", "Hope")
+    )
+  ) |>
+  ggplot(aes(x = exp_condition, y = .epred, color = emotion, group = emotion)) +
+  stat_pointinterval(
+    .width = 0.95,
+    point_interval = "median_hdi",
+    position = position_dodge(width = 0.4),
+    point_size = 3,
+    linewidth = 2
+  ) +
+  geom_text(
+    data = emotion_plot_data |>
+      mutate(
+        emotion = factor(
+          .category,
+          levels = c("Anxious", "Angry", "Calm", "Hopeful", "Happy"),
+          labels = c("Anxious", "Angry", "Calm", "Hopeful", "Happy")
+        ),
+        exp_condition = factor(
+          exp_condition,
+          levels = c("control", "anxiety", "hope"),
+          labels = c("Control", "Anxiety", "Hope")
+        )
+      ) |>
+      group_by(emotion, exp_condition, cld) |>
+      summarise(y_pos = max(.epred) + 0.5, .groups = "drop"),
+    aes(x = exp_condition, y = y_pos, label = cld, color = emotion),
+    position = position_dodge(width = 0.4),
+    size = 3.5,
+    fontface = "bold",
+    show.legend = FALSE
+  ) +
+  scale_y_continuous(limits = c(30, 70), breaks = seq(20, 80, by = 10)) +
+  scale_color_manual(
+    values = emotion_colors,
+    name = NULL
+  ) +
+  labs(
+    x = NULL,
+    y = NULL,
+    title = "Emotion Ratings in Different Conditions",
+    tag = "II."
+  ) +
+  theme_nice() +
+  theme(
+    # legend.position = "bottom",
+    plot.title = element_text(size = rel(1)),
+    panel.grid.major.y = element_line(color = "grey90", linewidth = 0.2),
+    legend.text = element_text(size = rel(0.9))
+  )
+
+part2
+
+ggsave(here(figure_dir, "manip_emotions_fig.svg"),
+       height = 3.5,
+       width = 6,
+       dpi = 600)
+```
+
+### Part 3
+
+```{r}
+load.emojifont('OpenSansEmoji.ttf')
+
+reaction_plot_data <- df_mod |>
+  filter(!is.na(exp_reaction)) |>
+  mutate(
+    exp_condition = factor(
+      exp_condition,
+      levels = c("control", "anxiety", "hope"),
+      labels = c("Control", "Anxiety", "Hope")
+    ),
+    exp_reaction = factor(
+      exp_reaction,
+      levels = c("Happy", "Hopeful", "Calm", "Angry", "Anxious")
+    )
+  ) |>
+  count(exp_condition, exp_reaction) |>
+  group_by(exp_condition) |>
+  mutate(
+    total = sum(n),
+    pct = n / total * 100,
+    emoji_icon = case_when(
+      exp_reaction == "Angry" ~ emoji("rage"),
+      exp_reaction == "Anxious" ~ emoji("fearful"),
+      exp_reaction == "Calm" ~ emoji("relieved"),
+      exp_reaction == "Hopeful" ~ emoji("blush"),
+      exp_reaction == "Happy" ~ emoji("grin")
+    ),
+    label = if_else(pct >= 1, paste0(emoji_icon, "\n", sprintf("%.0f%%", pct)), "")
+  ) |>
+  ungroup()
+```
+
+
+```{r}
+part3 <- reaction_plot_data |>
+  ggplot(aes(x = pct, y = exp_condition, fill = exp_reaction)) +
+  geom_col(position = "stack", width = 0.7, color = "grey20") +
+  geom_text(
+    aes(label = label),
+    position = position_stack(vjust = 0.5),
+    size = 4,
+    family = "OpenSansEmoji",
+    color = "black"
+  ) +
+  scale_fill_manual(
+    values = emotion_colors,
+    labels = c(
+      "Anxious" = emoji("fearful"),
+      "Angry" = emoji("rage"),
+      "Calm" = emoji("relieved"),
+      "Hopeful" = emoji("blush"),
+      "Happy" = emoji("grin")
+    ),
+    name = NULL
+  ) +
+  scale_x_continuous(
+    labels = scales::percent_format(scale = 1),
+    expand = c(0, 0)
+  ) +
+  labs(
+    x = NULL,
+    y = NULL,
+    title = "Emoji Reactions to Post",
+    tag = "III."
+  ) +
+  theme_nice() +
+  theme(
+    axis.line.x = element_blank(),
+    axis.line.y = element_blank(),
+    axis.text.x = element_blank(),
+    legend.text = element_text(family = "OpenSansEmoji", size = 20)
+  ) +
+  guides(fill = guide_legend(reverse = TRUE))
+
+part3
+
+ggsave(here(figure_dir, "reaction_emotions_fig.svg"),
+       height = 4,
+       width = 6.5,
+       dpi = 600)
+```
+
+### Grid
+
+```{r}
+#| fig-height: 8
+#| fig-width: 12
+#| fig-dpi: 600
+#| fig-showtext: TRUE
+showtext_opts(dpi = 600)
+(part1 | (part2 / part3)) 
+
+ggsave(here(figure_dir, "manip_grid.png"),
+       height = 8,
+       width = 12,
+       dpi = 600)
+```
+
+## Heterogeneity in Emotional Effects 
+
+### Anxiety-Hope x Age Group
+
+```{r}
+#| output: false
+ah2 <- brm(
+  data = df_mod,
+  family = gaussian(),
+  formula = anxiety_hope_dim ~ exp_condition * age_group,
+  prior = priors,
+  sample_prior = "yes",
+  init = "random",
+  chains = chains,
+  iter = iter,
+  warmup = warmup,
+  seed = bayes_seed,
+  control = list(
+    adapt_delta = adapt_delta,
+    max_treedepth = max_treedepth)
+  )
+```
+
+```{r}
+ah2_brms <- tidy(ah2, robust = TRUE, conf.method = "HPDinterval", rhat = TRUE, ess = TRUE) |>
+  filter(effect == "fixed") |>
+  mutate(term = case_when(
+    term == "(Intercept)"                                ~ "Intercept",
+    term == "exp_conditionhope"                         ~ "Hope (vs. Control)",
+    term == "exp_conditionanxiety"                      ~ "Anxiety (vs. Control)",
+    term == "age_group22M26years"                       ~ "Age Group 22-26 (vs. 16-21)",
+    term == "exp_conditionhope:age_group22M26years"     ~ "Age Group x Hope",
+    term == "exp_conditionanxiety:age_group22M26years"  ~ "Age Group x Anxiety",
+    TRUE ~ term
+  )) |>
+  select(Term = term,
+         Median = estimate,
+         MAD = std.error,
+         "95% HDI Lower" = conf.low,
+         "95% HDI Upper" = conf.high,
+         "R-hat" = rhat,
+         ESS = ess)
+```
+```{r}
+ah2_brms_table <- ah2_brms |>
+  mutate(across(where(is.numeric), \(x) round(x, 3))) |>
+  tt()
+
+ah2_brms_table
+ah2_brms_table |>
+  save_tt(here(table_dir, "ah2_brms_table.docx"), overwrite = TRUE)
+```
+
+### Anxiety-Hope x Gender
+
+```{r}
+#| output: false
+ah3 <- brm(
+  data = df_mod,
+  family = gaussian(),
+  formula = anxiety_hope_dim ~ exp_condition * gender,
+  prior = priors,
+  sample_prior = "yes",
+  init = "random",
+  chains = chains,
+  iter = iter,
+  warmup = warmup,
+  seed = bayes_seed,
+  control = list(
+    adapt_delta = adapt_delta,
+    max_treedepth = max_treedepth)
+  )
+```
+
+```{r}
+ah3_brms <- tidy(ah3, robust = TRUE, conf.method = "HPDinterval", rhat = TRUE, ess = TRUE) |>
+  filter(effect == "fixed") |>
+  mutate(term = case_when(
+    term == "(Intercept)"                          ~ "Intercept",
+    term == "exp_conditionhope"                    ~ "Hope (vs. Control)",
+    term == "exp_conditionanxiety"                 ~ "Anxiety (vs. Control)",
+    term == "genderfemale"                         ~ "Women (vs. Men)",
+    term == "genderother"                          ~ "Other (vs. Men)",
+    term == "exp_conditionhope:genderfemale"       ~ "Women x Hope",
+    term == "exp_conditionanxiety:genderfemale"    ~ "Women x Anxiety",
+    term == "exp_conditionhope:genderother"        ~ "Other x Hope",
+    term == "exp_conditionanxiety:genderother"     ~ "Other x Anxiety",
+    TRUE ~ term
+  )) |>
+  select(Term = term,
+         Median = estimate,
+         MAD = std.error,
+         "95% HDI Lower" = conf.low,
+         "95% HDI Upper" = conf.high,
+         "R-hat" = rhat,
+         ESS = ess)
+```
+
+```{r}
+ah3_brms_table <- ah3_brms |>
+  mutate(across(where(is.numeric), \(x) round(x, 3))) |>
+  tt()
+
+ah3_brms_table
+ah3_brms_table |>
+  save_tt(here(table_dir, "ah3_brms_table.docx"), overwrite = TRUE)
+```
+
+### All Emotions x Age Group 
+
+```{r}
+f_er2 <- bf(mvbind(Anxious, Angry, Hopeful, Happy, Calm) ~ exp_condition * age_group) + 
+  set_rescor(FALSE)
+
+priors_er2 <- c(
+  prior(normal(0.5, 0.5), class = "Intercept", resp = "Anxious"),
+  prior(normal(0.5, 0.5), class = "Intercept", resp = "Angry"),
+  prior(normal(0.5, 0.5), class = "Intercept", resp = "Hopeful"),
+  prior(normal(0.5, 0.5), class = "Intercept", resp = "Happy"),
+  prior(normal(0.5, 0.5), class = "Intercept", resp = "Calm"),
+  prior(normal(0, 0.5), class = "b", resp = "Anxious"),
+  prior(normal(0, 0.5), class = "b", resp = "Angry"),
+  prior(normal(0, 0.5), class = "b", resp = "Hopeful"),
+  prior(normal(0, 0.5), class = "b", resp = "Happy"),
+  prior(normal(0, 0.5), class = "b", resp = "Calm"),
+  prior(exponential(4), class = "sigma", resp = "Anxious"),
+  prior(exponential(4), class = "sigma", resp = "Angry"),
+  prior(exponential(4), class = "sigma", resp = "Hopeful"),
+  prior(exponential(4), class = "sigma", resp = "Happy"),
+  prior(exponential(4), class = "sigma", resp = "Calm")
+)
+```
+
+```{r}
+#|output: false
+er2 <- brm(
+  data = df_mod,
+  family = gaussian(),
+  formula = f_er2,
+  prior = priors_er2,
+  sample_prior = "yes",
+  init = "random",
+  chains = chains,
+  iter = iter,
+  warmup = warmup,
+  seed = bayes_seed,
+  control = list(
+    adapt_delta = adapt_delta,
+    max_treedepth = max_treedepth
+  )
+)
+```
+
+#### Create Table
+
+```{r}
+emotions <- c("Anxious", "Angry", "Hopeful", "Happy", "Calm")
+
+er2_brms_raw <- map(emotions, \(em) {
+  tidy(er2, parameters = paste0("^b_", em), robust = TRUE, 
+       conf.method = "HPDinterval", rhat = TRUE, ess = TRUE) |>
+    mutate(Outcome = em,
+           term = str_remove(term, paste0("b_", em, "_")))
+}) |>
+  list_rbind()
+
+er2_brms <- er2_brms_raw |>
+  mutate(term = case_when(
+    term == "(Intercept)"                                ~ "Intercept",
+    term == "exp_conditionhope"                         ~ "Hope (vs. Control)",
+    term == "exp_conditionanxiety"                      ~ "Anxiety (vs. Control)",
+    term == "age_group22M26years"                       ~ "Age Group 22-26 (vs. 16-21)",
+    term == "exp_conditionhope:age_group22M26years"     ~ "Age Group x Hope",
+    term == "exp_conditionanxiety:age_group22M26years"  ~ "Age Group x Anxiety",
+    TRUE ~ term
+  )) |>
+  select(Outcome, Term = term,
+         Median = estimate,
+         MAD = std.error,
+         "95% HDI Lower" = conf.low,
+         "95% HDI Upper" = conf.high,
+         "R-hat" = rhat,
+         ESS = ess)
+```
+
+```{r}
+er2_brms_table <- er2_brms |>
+  mutate(across(where(is.numeric), \(x) round(x, 3))) |>
+  select(-Outcome) |>
+  tt() |>
+  group_tt(i = list(
+    "Anxious" = 1,
+    "Angry"   = 7,
+    "Hopeful" = 13,
+    "Happy"   = 19,
+    "Calm"    = 25
+  ))
+
+er2_brms_table
+er2_brms_table |>
+  save_tt(here(table_dir, "er2_brms_table.docx"), overwrite = TRUE)
+```
+
+### All Emotions x Gender
+
+```{r}
+f_er3 <- bf(mvbind(Anxious, Angry, Hopeful, Happy, Calm) ~ exp_condition * gender) + 
+  set_rescor(FALSE)
+
+priors_er3 <- c(
+  prior(normal(0.5, 0.5), class = "Intercept", resp = "Anxious"),
+  prior(normal(0.5, 0.5), class = "Intercept", resp = "Angry"),
+  prior(normal(0.5, 0.5), class = "Intercept", resp = "Hopeful"),
+  prior(normal(0.5, 0.5), class = "Intercept", resp = "Happy"),
+  prior(normal(0.5, 0.5), class = "Intercept", resp = "Calm"),
+  prior(normal(0, 0.5), class = "b", resp = "Anxious"),
+  prior(normal(0, 0.5), class = "b", resp = "Angry"),
+  prior(normal(0, 0.5), class = "b", resp = "Hopeful"),
+  prior(normal(0, 0.5), class = "b", resp = "Happy"),
+  prior(normal(0, 0.5), class = "b", resp = "Calm"),
+  prior(exponential(4), class = "sigma", resp = "Anxious"),
+  prior(exponential(4), class = "sigma", resp = "Angry"),
+  prior(exponential(4), class = "sigma", resp = "Hopeful"),
+  prior(exponential(4), class = "sigma", resp = "Happy"),
+  prior(exponential(4), class = "sigma", resp = "Calm")
+)
+```
+
+```{r}
+#|output: false
+er3 <- brm(
+  data = df_mod,
+  family = gaussian(),
+  formula = f_er3,
+  prior = priors_er3,
+  sample_prior = "yes",
+  init = "random",
+  chains = chains,
+  iter = iter,
+  warmup = warmup,
+  seed = bayes_seed,
+  control = list(
+    adapt_delta = adapt_delta,
+    max_treedepth = max_treedepth
+  )
+)
+```
+
+```{r}
+er3_brms_raw <- map(emotions, \(em) {
+  tidy(er3, parameters = paste0("^b_", em), robust = TRUE, 
+       conf.method = "HPDinterval", rhat = TRUE, ess = TRUE) |>
+    mutate(Outcome = em,
+           term = str_remove(term, paste0("b_", em, "_")))
+}) |>
+  list_rbind()
+
+er3_brms <- er3_brms_raw |>
+  mutate(term = case_when(
+    term == "(Intercept)"                              ~ "Intercept",
+    term == "exp_conditionhope"                        ~ "Hope (vs. Control)",
+    term == "exp_conditionanxiety"                     ~ "Anxiety (vs. Control)",
+    term == "genderfemale"                             ~ "Women (vs. Men)",
+    term == "genderother"                              ~ "Other (vs. Men)",
+    term == "exp_conditionhope:genderfemale"           ~ "Women x Hope",
+    term == "exp_conditionanxiety:genderfemale"        ~ "Women x Anxiety",
+    term == "exp_conditionhope:genderother"            ~ "Other x Hope",
+    term == "exp_conditionanxiety:genderother"         ~ "Other x Anxiety",
+    TRUE ~ term
+  )) |>
+  select(Outcome, Term = term,
+         Median = estimate,
+         MAD = std.error,
+         "95% HDI Lower" = conf.low,
+         "95% HDI Upper" = conf.high,
+         "R-hat" = rhat,
+         ESS = ess)
+```
+
+```{r}
+er3_brms_table <- er3_brms |>
+  mutate(across(where(is.numeric), \(x) round(x, 3))) |>
+  select(-Outcome) |>
+  tt() |>
+  group_tt(i = list(
+    "Anxious" = 1,
+    "Angry"   = 10,
+    "Hopeful" = 19,
+    "Happy"   = 28,
+    "Calm"    = 37
+  ))
+
+er3_brms_table
+er3_brms_table |>
+  save_tt(here(table_dir, "er3_brms_table.docx"), overwrite = TRUE)
+```
+
+### Predicted averages
+
+```{r}
+er1_preds <- avg_predictions(
+  er1,
+  by = c("group", "exp_condition")) |> 
+  as_tibble() |> 
+  select(Emotion = group,
+         Condition = exp_condition,
+         Median = estimate,
+         "95% HDI Lower" = conf.low,
+         "95% HDI Upper" = conf.high,
+         )
+
+er1_preds |> tt()
+```
+
+
+
+
+
+
+
