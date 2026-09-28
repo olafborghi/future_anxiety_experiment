@@ -49,3 +49,6 @@ po/*~
 rsconnect/
 02_output/models/
 *.rds
+
+# Claude Code local config
+.claude/
