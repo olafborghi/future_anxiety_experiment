@@ -27,15 +27,6 @@ execute:
 # set error messages to English
 Sys.setenv(LANG = "en")
 
-knitr::opts_chunk$set(
-  fig.align = "center", 
-  fig.retina = 3,
-  fig.width = 6, 
-  fig.height = (6 * 0.618),
-  out.width = "90%", 
-  collapse = FALSE
-)
-
 options(
   digits = 4,
   width = 300,
@@ -54,18 +45,10 @@ library("groundhog")
 # use groundhog to install and load packages
 pkgs <- c("here",         # System path management
           "tidyverse",    # ggplot, dplyr, and friends
-          "datawizard",   # Data preparation tools
           "brms",         # Bayesian regression modelling in Stan
           "marginaleffects", # Model-based predictions, comparisons, and more marginalia
-          "tidybayes",    # Tools to work with Bayesian models 
-          "tinytable",    # Minimalist tables
-          "modelsummary", # Data and model summaries with tables and plots
-          "ggdist",       # Additional plot elements
-          # "ggrain",       # For fancy raincloud plots
-          # "GGally",       # ggpairs and other ggplot2 friends
-          # "ggsignif",     # Add significance to figures
-          "patchwork",    # Combine multiple ggplots
-          "showtext"      # Additional fonts for plots etc
+          "tidybayes",    # Tools to work with Bayesian models
+          "tinytable"     # Minimalist tables
           )
 
 groundhog.library(pkgs, "2026-01-01")
@@ -88,68 +71,9 @@ options(mc.cores = 4,
 
 ```{r}
 #| include: false
-
-showtext_auto()
-showtext_opts(dpi = 600)
-
-font_add_google("Public Sans", "Public Sans")
-font_add_google("Public Sans", "Public Sans Light", regular.wt = 300)
-font_add_google("Public Sans", "Public Sans Semibold", regular.wt = 600)
-
-# Custom ggplot theme
-theme_nice <- function() {
-  # General text family and base size
-  theme_minimal(base_family = "Public Sans", base_size = 14) +
-    theme(
-      # Remove minor grid lines for cleaner look
-      panel.grid.minor = element_blank(),
-      # Customize major grid lines color
-      panel.grid.major = element_blank(),
-      # Plot title: bold and custom relative size
-      plot.title = element_text(family = "Public Sans", face = "bold", size = rel(1.1), margin = margin(b = 10)),
-      # Subtitle and caption: lighter weight 
-      plot.subtitle = element_text(family = "Public Sans Light", face = "plain"),
-      plot.caption = element_text(family = "Public Sans Light", face = "plain"),
-      # Axis text: Relative size
-      axis.text = element_text(size = rel(0.9)),
-      # Axis titles: Semibold and custom relative size
-      axis.title = element_text(family = "Public Sans Semibold", size = rel(0.9)),
-      axis.title.x = element_text(hjust = 0.5),
-      axis.title.y = element_text(hjust = 0.5),
-      # Axis lines
-      axis.line = element_line(color = "grey25", linewidth = 0.8),
-      # Facet labels: bold text on grey background
-      strip.text = element_text(
-        family = "Public Sans Semibold", face = "plain",
-        size = rel(1),
-        hjust = 0.5
-      ),
-      strip.background = element_rect(fill = "grey95", color = "grey25", linewidth = 0.8), 
-      # Legend styling: compact and top-positioned
-      legend.title = element_text(family = "Public Sans Semibold", size = rel(0.8)),
-      legend.text = element_text(size = rel(0.8)),
-      legend.position = "top",
-      legend.justification = "center",
-      legend.title.position = "left",
-      legend.margin = margin(l = 0, t = 0)
-    )
-}
-
-
-theme_set(theme_nice())
-update_geom_defaults("text", list(family = "Public Sans"))
-update_geom_defaults("label", list(family = "Public Sans"))
-```
-
-```{r}
-#| include: false
 data_dir <- here("01_data")
-table_dir <- here("02_output", "tables", "RQ1")
-figure_dir <- here("02_output", "figures", "RQ1")
 model_dir <- here("02_output", "models", "RQ1")
 
-dir.create(table_dir, recursive = TRUE, showWarnings = TRUE)
-dir.create(figure_dir, recursive = TRUE, showWarnings = TRUE)
 dir.create(model_dir, recursive = TRUE, showWarnings = TRUE)
 ```
 
@@ -212,7 +136,7 @@ m1 <- brm(
 print(m1)
 ```
 
-#### Quantities of interest
+#### Quantities of Interest
 
 ```{r}
 m1_pred_avg <- avg_predictions(m1) |> 
@@ -300,7 +224,26 @@ m2 <- brm(
 summary(m2)
 ```
 
-#### Quantities of interest
+#### Quantities of Interest
+
+Association of age group with democratic support, averaged across conditions:
+
+```{r}
+m2_mod_comps <- avg_comparisons(m2, 
+                                variables = list(age_group = "pairwise"), 
+                                newdata = datagrid(exp_condition = unique, age_group = unique)) |> 
+  as_tibble() |> 
+  select(Contrast = contrast,
+         Median = estimate,
+         "95% HDI Lower" = conf.low,
+         "95% HDI Upper" = conf.high
+         ) |> 
+  mutate(across(where(is.numeric), \(x) round(x, 3)))
+
+m2_mod_comps |> tt()
+```
+
+Treatment effects within each age group:
 
 ```{r}
 m2_comp <- avg_comparisons(m2, 
@@ -316,6 +259,25 @@ m2_comp <- avg_comparisons(m2,
   mutate(across(where(is.numeric), \(x) round(x, 3)))
 
 m2_comp |> tt()
+```
+
+Differences in the treatment effects between age groups:
+
+```{r}
+m2_comp_diffs <- avg_comparisons(m2,
+                                 variables = list(exp_condition = "pairwise"),
+                                 by = "age_group",
+                                 hypothesis = difference ~ pairwise | contrast) |>
+  as_tibble() |>
+  select(Contrast = contrast,
+         `Age Group Difference` = hypothesis,
+         Median = estimate,
+         "95% HDI Lower" = conf.low,
+         "95% HDI Upper" = conf.high
+         ) |>
+  mutate(across(where(is.numeric), \(x) round(x, 3)))
+
+m2_comp_diffs |> tt()
 ```
 
 #### Frequentist comparison
@@ -370,7 +332,26 @@ m3 <- brm(
 summary(m3)
 ```
 
-#### Quantities of interest
+#### Quantities of Interest
+
+Association of gender with democratic support, averaged across conditions:
+
+```{r}
+m3_mod_comps <- avg_comparisons(m3, 
+                                variables = list(gender = "pairwise"), 
+                                newdata = datagrid(exp_condition = unique, gender = unique)) |> 
+  as_tibble() |> 
+  select(Contrast = contrast,
+         Median = estimate,
+         "95% HDI Lower" = conf.low,
+         "95% HDI Upper" = conf.high
+         ) |> 
+  mutate(across(where(is.numeric), \(x) round(x, 3)))
+
+m3_mod_comps |> tt()
+```
+
+Treatment effects within each gender:
 
 ```{r}
 m3_comp <- avg_comparisons(m3, 
@@ -386,6 +367,25 @@ m3_comp <- avg_comparisons(m3,
   mutate(across(where(is.numeric), \(x) round(x, 3)))
 
 m3_comp |> tt()
+```
+
+Differences in the treatment effects between genders:
+
+```{r}
+m3_comp_diffs <- avg_comparisons(m3,
+                                 variables = list(exp_condition = "pairwise"),
+                                 by = "gender",
+                                 hypothesis = difference ~ pairwise | contrast) |>
+  as_tibble() |>
+  select(Contrast = contrast,
+         `Gender Difference` = hypothesis,
+         Median = estimate,
+         "95% HDI Lower" = conf.low,
+         "95% HDI Upper" = conf.high
+         ) |>
+  mutate(across(where(is.numeric), \(x) round(x, 3)))
+
+m3_comp_diffs |> tt()
 ```
 
 #### Frequentist comparison
@@ -412,7 +412,7 @@ f3_comp |> tt()
 
 ## Supplementary Models
 
-### Model 4 — Control for Demograpics & Pre-Measures
+### Model 4 — Control for Demographics
 
 ```{r}
 df_control <- df |> 
@@ -449,7 +449,7 @@ m4 <- brm(
 print(m4)
 ```
 
-#### Quantities of interest
+#### Quantities of Interest
 
 ```{r}
 m4_comp <- avg_comparisons(m4, variables = list(exp_condition = "pairwise")) |> 
@@ -518,7 +518,7 @@ m5 <- brm(
 summary(m5)
 ```
 
-#### Quantities of interest
+#### Quantities of Interest
 
 ```{r}
 m5_comp <- avg_comparisons(m5, 
@@ -554,7 +554,7 @@ f5_comp <- avg_comparisons(f5,
 f5_comp |> tt()
 ```
 
-### Model 6 — Attentive Participants Only 
+### Model 6 — Attentive Participants Only
 
 Attentive participants:
 ```{r}
@@ -592,7 +592,7 @@ m6 <- brm(
 summary(m6)
 ```
 
-#### Quantities of interest
+#### Quantities of Interest
 
 ```{r}
 m6_comp <- avg_comparisons(m6, 
@@ -628,7 +628,7 @@ f6_comp <- avg_comparisons(f6,
 f6_comp |> tt()
 ```
 
-### Model 7 — Item-level differences
+### Model 7 — Item-Level Differences
 
 ```{r}
 df_dem_items <- df |> 
@@ -678,7 +678,6 @@ m7 <- brm(
   family = gaussian(),
   formula = f_m7,
   prior = priors_m7,
-  # sample_prior = "yes",
   init = "random",
   chains = chains,
   iter = iter,
@@ -692,109 +691,35 @@ m7 <- brm(
 )
 ```
 
-#### Quantities of interest
+#### Quantities of Interest
 
 ```{r}
 # Get posterior predictions 
 m7.draws <- expand.grid(
   exp_condition = c("control", "anxiety", "hope"),
   item = levels(df_dem_items$item)) |>
-  add_epred_draws(m7, re_formula = NA, ndraws = 4000) |>
+  add_epred_draws(m7, re_formula = NA) |>
   ungroup()
 
 # Compute item-level pairwise contrasts 
-m7.item_contrasts <- m7.draws |>
+m7.contrasts <- m7.draws |>
   select(exp_condition, item, .draw, .epred) |>
   pivot_wider(names_from = exp_condition, values_from = .epred) |>
   mutate(
-    `Anxiety − Control` = anxiety - control,
-    `Hope − Control` = hope - control,
+    `Anxiety - Control` = anxiety - control,
+    `Hope - Control` = hope - control,
     `Anxiety - Hope` = anxiety - hope
   ) |>
   pivot_longer(
-    cols = c(`Anxiety − Control`, `Hope − Control`, `Anxiety - Hope`),
+    cols = c(`Anxiety - Control`, `Hope - Control`, `Anxiety - Hope`),
     names_to = "contrast",
     values_to = "estimate"
   ) |>
-  mutate(type = "Item-level")
-
-# Compute pairwise comparisons across items
-m7.avg_contrasts <- m7.item_contrasts |>
-  group_by(contrast, .draw) |>
-  summarise(estimate = mean(estimate), .groups = "drop") |>
-  mutate(
-    item = "Overall ATE",
-    type = "Overall"
-  )
-
-# Combine draws
-m7.contrasts <- bind_rows(m7.item_contrasts, m7.avg_contrasts) |>
-  mutate(
-    item = factor(item, levels = c(levels(df_dem_items$item), "Overall ATE")),
-    contrast = factor(contrast, levels = c("Anxiety - Hope", "Anxiety − Control", "Hope − Control"))
-  )
-
-# Compute whether HDI excludes zero for each item
-m7.hdi_check <- m7.contrasts |>
-  mutate(estimate = estimate * 100) |>
-  group_by(item, contrast) |>
-  median_hdi(estimate, .width = 0.95) |>
-  mutate(excludes_zero = if_else(sign(.lower) == sign(.upper), "Excludes zero", "Includes zero")) |>
-  select(item, contrast, excludes_zero)
-```
-
-```{r}
-#| fig-height: 5
-#| fig-width: 10
-#| fig-dpi: 600
-#| fig-showtext: TRUE
-showtext_opts(dpi = 600)
-m7.contrasts |>
-  mutate(estimate = estimate * 100) |>
-  left_join(m7.hdi_check, by = c("item", "contrast")) |>
-  ggplot(aes(x = estimate, y = item, fill = excludes_zero)) +
-  geom_vline(xintercept = 0, linetype = "dashed", color = "gray40", linewidth = 0.6) +
-  stat_slabinterval(
-    .width = c(.95),
-    point_interval = "median_hdi",
-    scale = 0.7,
-    slab_alpha = 0.6,        
-    interval_alpha = 1,      
-    point_alpha = 1,          
-    normalize = "groups",
-    point_size = 2.5,
-    interval_size = 1.5) +
-  facet_wrap(~contrast) +
-  scale_fill_manual(
-    name = "95% HDI",
-    values = c("Excludes zero" = "#364B9A", "Includes zero" = "#4A7BB7"),
-  ) +
-  # scale_color_manual(
-  #   name = "95% HDI",
-  #   values = c("Excludes zero" = "#364B9A", "Includes zero" = "#4A7BB7"),
-  # ) +
-  scale_x_continuous(limits = c(-15, 15), breaks = seq(-10, 10, by = 5), expand = expansion(add = 2.5)) +
-  labs(
-    x = "Percentage Points",
-    y = NULL,
-    title = "Treatment Effects on Democratic Support",
-    subtitle = "Posterior Distributions with Median and 95% HDI"
-  ) +
-  theme_nice() +
-  theme(
-    panel.grid.major.x = element_line(color = "grey90", linewidth = 0.2),
-    legend.position = "bottom"
-  )
-
-ggsave(here(figure_dir, "dem_mod_item.png"),
-       height = 5,
-       width = 10,
-       dpi = 600)
+  mutate(contrast = factor(contrast, levels = c("Anxiety - Hope", "Anxiety - Control", "Hope - Control")))
 ```
 
 ```{r}
 m7.ate_table <- m7.contrasts |>
-  filter(type == "Item-level") |>  
   group_by(contrast, .draw) |>
   summarise(estimate = mean(estimate), .groups = "drop") |>
   group_by(contrast) |>
@@ -811,7 +736,6 @@ m7.ate_table |>
 
 ```{r}
 m7.cate_table <- m7.contrasts |>
-  filter(type == "Item-level") |>
   group_by(contrast, item) |>
   median_hdi(estimate, .width = 0.95) |> 
   select(Contrast = contrast,
@@ -821,185 +745,362 @@ m7.cate_table <- m7.contrasts |>
          "95% HDI Upper" = .upper
   ) 
 
-m7.cate_table |> 
+m7.cate_table |>
   tt()
 ```
 
-## Visualize Models 1, 2, 5
+## Exploratory Moderation Models
 
-### Extract Posterior Draws
-
-```{r}
-# M1: Overall ATE
-m1.draws <- expand.grid(
-  exp_condition = c("control", "anxiety", "hope")
-) |>
-  add_epred_draws(m1, re_formula = NA, ndraws = 4000) |>
-  ungroup()
-
-m1.contrasts <- m1.draws |>
-  select(exp_condition, .draw, .epred) |>
-  pivot_wider(names_from = exp_condition, values_from = .epred) |>
-  mutate(
-    `Anxiety − Control` = anxiety - control,
-    `Hope − Control` = hope - control,
-    `Anxiety - Hope` = anxiety - hope
-  ) |>
-  pivot_longer(
-    cols = c(`Anxiety − Control`, `Hope − Control`, `Anxiety - Hope`),
-    names_to = "contrast",
-    values_to = "estimate"
-  ) |>
-  mutate(
-    model = "ATE",
-    subgroup = "ATE"
-  )
-
-# M2: cATE by age_group
-m2.draws <- expand.grid(
-  exp_condition = c("control", "anxiety", "hope"),
-  age_group = unique(df$age_group)
-  ) |>
-  add_epred_draws(m2, re_formula = NA, ndraws = 4000) |>
-  ungroup()
-
-m2.contrasts <- m2.draws |>
-  select(exp_condition, age_group, .draw, .epred) |>
-  pivot_wider(names_from = exp_condition, values_from = .epred) |>
-  mutate(
-    `Anxiety − Control` = anxiety - control,
-    `Hope − Control` = hope - control,
-    `Anxiety - Hope` = anxiety - hope
-  ) |>
-  pivot_longer(
-    cols = c(`Anxiety − Control`, `Hope − Control`, `Anxiety - Hope`),
-    names_to = "contrast",
-    values_to = "estimate"
-  ) |>
-  mutate(
-    model = "Age",
-    subgroup = as.character(age_group)
-  ) |>
-  select(-age_group)
-
-# m3: cATE by gender
-m3.draws <- expand.grid(
-  exp_condition = c("control", "anxiety", "hope"),
-  gender = unique(df$gender)
-) |>
-  add_epred_draws(m3, re_formula = NA, ndraws = 4000) |>
-  ungroup() |> 
-  filter(gender != "other")
-
-m3.contrasts <- m3.draws |>
-  select(exp_condition, gender, .draw, .epred) |>
-  pivot_wider(names_from = exp_condition, values_from = .epred) |>
-  mutate(
-    `Anxiety − Control` = anxiety - control,
-    `Hope − Control` = hope - control,
-    `Anxiety - Hope` = anxiety - hope
-  ) |>
-  pivot_longer(
-    cols = c(`Anxiety − Control`, `Hope − Control`, `Anxiety - Hope`),
-    names_to = "contrast",
-    values_to = "estimate"
-  ) |>
-  mutate(
-    model = "Gender",
-    subgroup = as.character(gender)
-  ) |>
-  select(-gender)
-
-pairwise_plot_data <- bind_rows(m1.contrasts, m2.contrasts, m3.contrasts) |>
-  mutate(
-    contrast = factor(contrast, levels = c("Anxiety - Hope", "Anxiety − Control", "Hope − Control")),
-    model = factor(model, levels = c("ATE", "Age", "Gender"))
-  )
-
-# Compute whether HDI excludes zero for each group
-hdi_check <- pairwise_plot_data |>
-  mutate(
-    estimate = estimate * 100,
-    subgroup = case_when(
-      subgroup == "male" ~ "Men",
-      subgroup == "female" ~ "Women",
-      subgroup == "16-21 years" ~ "16-21",
-      subgroup == "22-26 years" ~ "22-26",
-      TRUE ~ subgroup
-    ),
-    subgroup = factor(subgroup, levels = c("ATE", "22-26", "16-21", "Women", "Men"))
-  ) |>
-  group_by(model, contrast, subgroup) |>
-  median_hdi(estimate, .width = 0.95) |>
-  mutate(excludes_zero = if_else(sign(.lower) == sign(.upper), "Excludes zero", "Includes zero")) |>
-  select(model, contrast, subgroup, excludes_zero)
-```
-
-### Visualize
+Moderation of the treatment effects by subjective living standard, age (continuous), and parental ideology. Living standard: difficult and very difficult combined given the small number of respondents in "very difficult" (<5%). Continuous moderators are standardised for estimation; slopes are reported per year of age and per scale point of parental ideology.
 
 ```{r}
-#| fig-height: 5.5
-#| fig-width: 8
-#| fig-dpi: 600
-#| fig-showtext: TRUE
-showtext_opts(dpi = 600)
-
-pairwise_plot_data |>
+df_het <- df |>
   mutate(
-    estimate = estimate * 100,
-    subgroup = case_when(
-      subgroup == "male" ~ "Men",
-      subgroup == "female" ~ "Women",
-      subgroup == "16-21 years" ~ "16-21",
-      subgroup == "22-26 years" ~ "22-26",
-      TRUE ~ subgroup
-    ),
-    subgroup = factor(subgroup, levels = c("ATE", "22-26", "16-21", "Women", "Men"))
-  ) |>
-  left_join(hdi_check, by = c("model", "contrast", "subgroup")) |>
-  ggplot(aes(x = estimate, y = subgroup, fill = excludes_zero)) +
-  geom_vline(xintercept = 0, linetype = "dashed", color = "gray40", linewidth = 0.6) +
-  stat_slabinterval(
-    .width = c(.95),
-    point_interval = "median_hdi",
-    scale = 0.7,
-    slab_alpha = 0.6,        
-    interval_alpha = 1,      
-    point_alpha = 1,          
-    normalize = "groups",
-    point_size = 2.5,
-    interval_size = 1.5) +
-  facet_grid(model ~ contrast, scales = "free_y", space = "free_y") +
-  scale_fill_manual(
-    values = c("Excludes zero" = "#364B9A", "Includes zero" = "#4A7BB7"),
-    name = "95% HDI",
-  ) +
-  # scale_color_manual(
-  #   values = c("Excludes zero" = "#364B9A", "Includes zero" = "#4A7BB7"),
-  #   name = "95% HDI",
-  # ) +
-  scale_x_continuous(limits = c(-10, 10), breaks = seq(-10, 10, by = 5), expand = expansion(add = 2.5)) +
-  labs(
-    x = "Percentage Points",
-    y = NULL,
-    title = "Effects on Democratic Support",
-    subtitle = "Posterior Distributions with Median and 95% HDI"
-  ) +
-  theme_nice() +
-  theme(
-    legend.position = "bottom",
-    panel.grid.major.x = element_line(color = "grey90", linewidth = 0.2)
-  ) 
+    living_standard = fct_collapse(
+      living_standard,
+      Comfortable = levels(living_standard)[1],
+      Coping = levels(living_standard)[2],
+      Difficult = levels(living_standard)[3:4]
+    ) |> fct_rev()
+  )
 
-ggsave(here(figure_dir, "RQ1.1_ate_cate_posterior.png"),
-       height = 5.5,
-       width = 8,
-       dpi = 600)
+age_mean <- mean(df_het$age)
+age_sd <- sd(df_het$age)
+to_age_z <- \(x) (x - age_mean) / age_sd
+
+pi_mean <- mean(df_het$parental_ideology, na.rm = TRUE)
+pi_sd <- sd(df_het$parental_ideology, na.rm = TRUE)
+to_pi_z <- \(x) (x - pi_mean) / pi_sd
+
+df_het <- df_het |>
+  mutate(age_z = to_age_z(age),
+         parental_ideology_z = to_pi_z(parental_ideology))
+
+df_het |> count(living_standard)
 ```
 
+### Model 8 — Interaction with Living Standard
 
+```{r}
+f_m8 <- bf(exp_dem_pomp ~ exp_condition * living_standard)
+```
 
+```{r}
+#| output: false
+m8 <- brm(
+  data = df_het,
+  family = gaussian(),
+  formula = f_m8,
+  prior = priors_m1,
+  sample_prior = "yes",
+  init = "random",
+  chains = chains,
+  iter = iter,
+  warmup = warmup,
+  seed = bayes_seed,
+  control = list(
+    adapt_delta = adapt_delta,
+    max_treedepth = max_treedepth),
+  file = here(model_dir, "m8.rds")
+)
+```
 
+```{r}
+summary(m8)
+```
 
+#### Quantities of Interest
 
+Association of living standard with democratic support, averaged across conditions:
 
+```{r}
+m8_mod_comps <- avg_comparisons(m8, 
+                                variables = list(living_standard = "pairwise"), 
+                                newdata = datagrid(exp_condition = unique, living_standard = unique)) |> 
+  as_tibble() |> 
+  select(Contrast = contrast,
+         Median = estimate,
+         "95% HDI Lower" = conf.low,
+         "95% HDI Upper" = conf.high
+         ) |> 
+  mutate(across(where(is.numeric), \(x) round(x, 3)))
+
+m8_mod_comps |> tt()
+```
+
+Treatment effects within each level of living standard:
+
+```{r}
+m8_comp <- avg_comparisons(m8,
+                           variables = list(exp_condition = "pairwise"),
+                           by = "living_standard") |>
+  as_tibble() |>
+  select(Contrast = contrast,
+         `Living Standard` = living_standard,
+         Median = estimate,
+         "95% HDI Lower" = conf.low,
+         "95% HDI Upper" = conf.high
+         ) |>
+  mutate(across(where(is.numeric), \(x) round(x, 3)))
+
+m8_comp |> tt()
+```
+
+Differences in the treatment effects between levels of living standard:
+
+```{r}
+m8_comp_diffs <- avg_comparisons(m8,
+                                 variables = list(exp_condition = "pairwise"),
+                                 by = "living_standard",
+                                 hypothesis = difference ~ pairwise | contrast) |>
+  as_tibble() |>
+  select(Contrast = contrast,
+         `Living Standard Difference` = hypothesis,
+         Median = estimate,
+         "95% HDI Lower" = conf.low,
+         "95% HDI Upper" = conf.high
+         ) |>
+  mutate(across(where(is.numeric), \(x) round(x, 3)))
+
+m8_comp_diffs |> tt()
+```
+
+#### Frequentist comparison
+
+```{r}
+f8 <- lm(exp_dem_pomp ~ exp_condition * living_standard, data = df_het)
+
+f8_comp <- avg_comparisons(f8,
+                           variables = list(exp_condition = "pairwise"),
+                           by = "living_standard") |>
+  as_tibble() |>
+  select(Contrast = contrast,
+         `Living Standard` = living_standard,
+         Estimate = estimate,
+         SE = std.error,
+         `p` = p.value,
+         "95% CI Lower" = conf.low,
+         "95% CI Upper" = conf.high
+         ) |>
+  mutate(across(where(is.numeric), \(x) round(x, 3)))
+
+f8_comp |> tt()
+```
+
+### Model 9 — Interaction with Age (Continuous)
+
+```{r}
+f_m9 <- bf(exp_dem_pomp ~ exp_condition * age_z)
+```
+
+```{r}
+#| output: false
+m9 <- brm(
+  data = df_het,
+  family = gaussian(),
+  formula = f_m9,
+  prior = priors_m1,
+  sample_prior = "yes",
+  init = "random",
+  chains = chains,
+  iter = iter,
+  warmup = warmup,
+  seed = bayes_seed,
+  control = list(
+    adapt_delta = adapt_delta,
+    max_treedepth = max_treedepth),
+  file = here(model_dir, "m9.rds")
+)
+```
+
+```{r}
+summary(m9)
+```
+
+#### Quantities of Interest
+
+Association of age with democratic support (slope), averaged across conditions:
+
+```{r}
+m9_mod_slope <- avg_slopes(m9,
+                           variables = "age_z",
+                           newdata = datagrid(exp_condition = unique)) |> 
+  as_tibble() |> 
+  select(Median = estimate,
+         "95% HDI Lower" = conf.low,
+         "95% HDI Upper" = conf.high
+         ) |> 
+  mutate(across(where(is.numeric), \(x) x / age_sd, .names = "{.col} (per year)"),
+         across(where(is.numeric), \(x) round(x, 3)))
+
+m9_mod_slope |> tt()
+```
+
+Treatment effects at ages 16, 21, and 26:
+
+```{r}
+m9_comp <- comparisons(m9,
+                       variables = list(exp_condition = "pairwise"),
+                       newdata = datagrid(age_z = to_age_z(c(16, 21, 26)))) |>
+  as_tibble() |>
+  mutate(age = round(age_z * age_sd + age_mean)) |>
+  select(Contrast = contrast,
+         Age = age,
+         Median = estimate,
+         "95% HDI Lower" = conf.low,
+         "95% HDI Upper" = conf.high
+         ) |>
+  mutate(across(where(is.numeric), \(x) round(x, 3)))
+
+m9_comp |> tt()
+```
+
+Differences in the age slopes between conditions:
+
+```{r}
+m9_slope_diffs <- avg_slopes(m9,
+                             variables = "age_z",
+                             by = "exp_condition",
+                             hypothesis = ~ pairwise) |>
+  as_tibble() |>
+  select(Contrast = hypothesis,
+         Median = estimate,
+         "95% HDI Lower" = conf.low,
+         "95% HDI Upper" = conf.high
+         ) |>
+  mutate(across(where(is.numeric), \(x) x / age_sd, .names = "{.col} (per year)"),
+         across(where(is.numeric), \(x) round(x, 3)))
+
+m9_slope_diffs |> tt()
+```
+
+#### Frequentist comparison
+
+```{r}
+f9 <- lm(exp_dem_pomp ~ exp_condition * age_z, data = df_het)
+
+f9_slope_diffs <- avg_slopes(f9,
+                             variables = "age_z",
+                             by = "exp_condition",
+                             hypothesis = ~ pairwise) |>
+  as_tibble() |>
+  select(Contrast = hypothesis,
+         Estimate = estimate,
+         SE = std.error,
+         `p` = p.value,
+         "95% CI Lower" = conf.low,
+         "95% CI Upper" = conf.high
+         ) |>
+  mutate(across(where(is.numeric), \(x) round(x, 3)))
+
+f9_slope_diffs |> tt()
+```
+
+### Model 10 — Interaction with Parental Ideology
+
+```{r}
+f_m10 <- bf(exp_dem_pomp ~ exp_condition * parental_ideology_z)
+```
+
+```{r}
+#| output: false
+m10 <- brm(
+  data = df_het,
+  family = gaussian(),
+  formula = f_m10,
+  prior = priors_m1,
+  sample_prior = "yes",
+  init = "random",
+  chains = chains,
+  iter = iter,
+  warmup = warmup,
+  seed = bayes_seed,
+  control = list(
+    adapt_delta = adapt_delta,
+    max_treedepth = max_treedepth),
+  file = here(model_dir, "m10.rds")
+)
+```
+
+```{r}
+summary(m10)
+```
+
+#### Quantities of Interest
+
+Association of parental ideology with democratic support (slope), averaged across conditions:
+
+```{r}
+m10_mod_slope <- avg_slopes(m10,
+                            variables = "parental_ideology_z",
+                            newdata = datagrid(exp_condition = unique)) |> 
+  as_tibble() |> 
+  select(Median = estimate,
+         "95% HDI Lower" = conf.low,
+         "95% HDI Upper" = conf.high
+         ) |> 
+  mutate(across(where(is.numeric), \(x) x / pi_sd, .names = "{.col} (per scale point)"),
+         across(where(is.numeric), \(x) round(x, 3)))
+
+m10_mod_slope |> tt()
+```
+
+Treatment effects at parental ideology 0 (left), 5, and 10 (right):
+
+```{r}
+m10_comp <- comparisons(m10,
+                        variables = list(exp_condition = "pairwise"),
+                        newdata = datagrid(parental_ideology_z = to_pi_z(c(0, 5, 10)))) |>
+  as_tibble() |>
+  mutate(parental_ideology = round(parental_ideology_z * pi_sd + pi_mean)) |>
+  select(Contrast = contrast,
+         `Parental Ideology` = parental_ideology,
+         Median = estimate,
+         "95% HDI Lower" = conf.low,
+         "95% HDI Upper" = conf.high
+         ) |>
+  mutate(across(where(is.numeric), \(x) round(x, 3)))
+
+m10_comp |> tt()
+```
+
+Differences in the parental ideology slopes between conditions:
+
+```{r}
+m10_slope_diffs <- avg_slopes(m10,
+                              variables = "parental_ideology_z",
+                              by = "exp_condition",
+                              hypothesis = ~ pairwise) |>
+  as_tibble() |>
+  select(Contrast = hypothesis,
+         Median = estimate,
+         "95% HDI Lower" = conf.low,
+         "95% HDI Upper" = conf.high
+         ) |>
+  mutate(across(where(is.numeric), \(x) x / pi_sd, .names = "{.col} (per scale point)"),
+         across(where(is.numeric), \(x) round(x, 3)))
+
+m10_slope_diffs |> tt()
+```
+
+#### Frequentist comparison
+
+```{r}
+f10 <- lm(exp_dem_pomp ~ exp_condition * parental_ideology_z, data = df_het)
+
+f10_slope_diffs <- avg_slopes(f10,
+                              variables = "parental_ideology_z",
+                              by = "exp_condition",
+                              hypothesis = ~ pairwise) |>
+  as_tibble() |>
+  select(Contrast = hypothesis,
+         Estimate = estimate,
+         SE = std.error,
+         `p` = p.value,
+         "95% CI Lower" = conf.low,
+         "95% CI Upper" = conf.high
+         ) |>
+  mutate(across(where(is.numeric), \(x) round(x, 3)))
+
+f10_slope_diffs |> tt()
+```

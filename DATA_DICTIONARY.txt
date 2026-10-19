@@ -1,17 +1,21 @@
 ================================================================================
 DATA DICTIONARY
-Future Feelings Experiment — Analysis Datasets
+Future Anxiety Experiment — Analysis Datasets
 ================================================================================
 
 This document describes the variables in the two analysis datasets:
 
-  01_data/analysis/df_wide.csv / .RData   (1,895 rows x 178 columns)
-  01_data/analysis/df_long.csv / .RData   (15,160 rows x 136 columns)
+  01_data/analysis/df_wide.csv / .RData   (1,895 rows x 183 columns)
+  01_data/analysis/df_long.csv / .RData   (15,160 rows x 141 columns)
 
 The wide dataset has one row per participant. The long dataset has one row per
 conjoint candidate per trial per participant (4 trials x 2 candidates = 8 rows
-per participant). Both datasets share the same participant-level variables; the
+per participant). Both datasets share the same participant-level variables
+(participant age is called age in df_wide and participant_age in df_long); the
 long dataset additionally contains trial- and candidate-level conjoint variables.
+
+The analysis datasets are created by script 02, which adds the LLM-coded comment
+sentiment and emotion to the cleaned datasets from script 01 (01_data/clean/).
 
 POMP scores (Percent of Maximum Possible) rescale a composite to the range
 [0, 1], where 0 = minimum possible score and 1 = maximum possible score.
@@ -36,7 +40,7 @@ sample_type             Whether the participant was recruited fresh for this
                         wave or recontacted from a prior wave
                         Values: fresh, recontact
 
-exp_design [WIDE ONLY]  Conjoint design string encoding the randomised profile
+exp_design              Conjoint design string encoding the randomised profile
                         attribute combinations for each trial. Used internally
                         by the cleaning script to reconstruct the conjoint
                         profiles; not intended for direct analysis.
@@ -58,7 +62,9 @@ region                  UK region of residence
                         South East, South West, Wales, West Midlands,
                         Yorkshire and The Humber
 
-age                     Participant age in years (16–26)
+age [WIDE ONLY]         Participant age in years (16–26)
+
+participant_age [LONG ONLY]  Participant age in years (16–26)
 
 age_group               Dichotomised age group
                         Values: 16-21 years, 22-26 years
@@ -124,11 +130,14 @@ exp_comment             Open-text comment the participant wrote in response to
                         the post (raw text, not included in analysis models)
 
 exp_comment_sentiment   Sentiment of the participant's comment, coded by LLM
-                        Scale: 1 (very negative) – 7 (very positive)
+                        (Claude Sonnet 4.5)
+                        Scale: 1 (very negative) – 7 (very positive);
+                        NA for non-responses (e.g., "no", "none")
 
 exp_comment_emotion     Dominant emotion expressed in the participant's comment,
-                        coded by LLM
-                        Values: anxious, angry, hopeful, happy, calm
+                        coded by LLM (Claude Sonnet 4.5)
+                        Values: anxious, angry, hopeful, happy, calm;
+                        NA for non-responses
 
 exp_reaction            The emotion the participant selected as their reaction
                         to the post
@@ -191,9 +200,12 @@ exp_polinfo_time        Time (in seconds) spent on the political information
 
 --- Manipulation Check ---
 
-anxiety_hope_dim        Derived manipulation check dimension
-                        0 = hope condition, 1 = anxiety condition
-                        (used to estimate the anxiety vs. hope contrast)
+anxiety_hope_dim        Anxiety–hope dimension (primary manipulation check),
+                        computed as (exp_check_anxious - exp_check_hopeful
+                        + 100) / 200
+                        Range: 0 (maximum hopefulness, minimum anxiety) –
+                        1 (maximum anxiety, minimum hopefulness);
+                        0.5 = emotional balance
 
 exp_check_anxious       Post-treatment emotion rating: how anxious
                         Visual analogue scale: 0–100
@@ -364,6 +376,18 @@ libdems_feeling         Feeling thermometer: Liberal Democrats (0–10)
 greens_feeling          Feeling thermometer: Green Party (0–10)
 reform_feeling          Feeling thermometer: Reform UK (0–10)
 
+parent1, parent2        The two parents or carers the participant rated
+                        Values: Mother, Father, Male legal carer,
+                                Female legal carer, Not applicable
+
+ideoparent1, ideoparent2  Perceived left-right ideology of parent/carer 1 and 2
+                          Scale: 0 (left) – 10 (right); NA if not answered
+                          (the raw code 99 is also set to NA)
+
+parental_ideology       Perceived parental ideology: mean of ideoparent1 and
+                        ideoparent2, or the one available rating
+                        Scale: 0 (left) – 10 (right); NA if neither rated
+
 
 ================================================================================
 8. ATTENTION CHECKS
@@ -379,5 +403,19 @@ pre_attention_exclusion Whether the participant was flagged for exclusion based
                         on the pre-treatment attention checks (only participants
                         coded "include" are retained in the analysis datasets)
                         Values: include
+
+================================================================================
+9. LLM VALIDATION DATA (01_data/validation/)
+================================================================================
+
+validation_sample.xlsx contains the 210 randomly sampled comments (70 per
+condition) with the human sentiment ratings used in script 10;
+validation_sample.csv is the same sample as exported for coding.
+
+id                                Participant identifier (matches id above)
+exp_comment                       Open-text comment
+exp_comment_sentiment_validation  Human sentiment rating, using the same
+                                  scale as exp_comment_sentiment (1–7; NA for
+                                  non-responses)
 
 ================================================================================

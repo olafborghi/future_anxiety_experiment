@@ -67,11 +67,9 @@ groundhog.library(pkgs, "2026-01-01")
 data_dir <- here("01_data")
 data_clean_dir <- here("01_data", "clean")
 table_dir <- here("02_output", "tables", "descriptives")
-figure_dir <- here("02_output", "figures", "descriptives")
 
 dir.create(data_clean_dir, recursive = TRUE, showWarnings = TRUE)
 dir.create(table_dir, recursive = TRUE, showWarnings = TRUE)
-dir.create(figure_dir, recursive = TRUE, showWarnings = TRUE)
 ```
 
 ```{r}
@@ -93,7 +91,7 @@ print(paste("N =", initial_sample - final_sample, "participants excluded due to 
 
 ## Calculate (Composite) Variables
 
-### Factors 
+### Factors
 
 ```{r}
 df_exp <- df_exp |> 
@@ -105,7 +103,7 @@ df_exp <- df_exp |>
 
 ### Pre-treatment Scales
 
-#### Political participation 
+#### Political participation
 
 ```{r}
 df_exp <- df_exp |>
@@ -158,7 +156,7 @@ df_exp |>
   datasummary_skim()
 ```
 
-Mc Donald's Omega
+McDonald's Omega
 ```{r}
 aut_omega <- df_exp |> 
   select(starts_with("aut_")) |> 
@@ -220,7 +218,7 @@ expressive_suppression_omega <- df_exp |>
 expressive_suppression_omega$omega.tot
 ```
 
-#### Ambiguity avoidance
+#### Ambiguity Intolerance
 
 ```{r}
 df_exp <- df_exp |>
@@ -276,9 +274,31 @@ aot_omega <- df_exp |>
 aot_omega$omega.tot
 ```
 
+#### Parental Ideology
+
+```{r}
+df_exp <- df_exp |>
+  mutate(across(c(ideoparent1, ideoparent2), \(x) na_if(x, 99)))
+
+# Check missingness patterns
+df_exp |>
+  count(parent1_na = is.na(ideoparent1),
+        parent2_na = is.na(ideoparent2))
+
+# Build the combined variable
+df_exp <- df_exp |>
+  mutate(parental_ideology = (coalesce(ideoparent1, ideoparent2) +
+                              coalesce(ideoparent2, ideoparent1)) / 2)
+
+# Check correlations
+df_exp |>
+  select(ideoparent1, ideoparent2, parental_ideology) |>
+  datasummary_correlation()
+```
+
 ## Post-Treatment Scales
 
-#### Experiment Democratic Support
+### Experiment Democratic Support
 
 ```{r}
 df_exp <- df_exp |>
@@ -318,7 +338,7 @@ exp_dem_omega <- df_exp |>
 exp_dem_omega$omega.tot
 ```
 
-#### Experiment Political Participation 
+### Experiment Political Participation
 
 ```{r}
 df_exp <- df_exp |>
@@ -351,7 +371,7 @@ exp_polpart_omega <- df_exp |>
 exp_polpart_omega$omega.tot
 ```
 
-### Reliability Table 
+### Reliability Table
 
 ```{r}
 reliability_table <- tibble(
@@ -493,6 +513,8 @@ df_wide <- df_exp |>
     
     dem_sum, dem_equal_vote, dem_fundamental_rights, dem_multiple_parties,
     
+    parental_ideology, parent1, parent2, ideoparent1, ideoparent2,
+
     cognitive_reappraisal_sum, erq_reappraisal1, erq_reappraisal2,
     erq_reappraisal3, erq_reappraisal4, erq_reappraisal5, erq_reappraisal6,
     
@@ -568,7 +590,7 @@ df_long <- df_long_3 |>
   )
 ```
 
-## Save analysis data 
+## Save analysis data
 
 ```{r}
 save(df_wide, file = here(data_clean_dir, "df_wide.RData"))
@@ -577,7 +599,3 @@ write_csv(df_wide, file = here(data_clean_dir, "df_wide.csv"))
 save(df_long, file = here(data_clean_dir, "df_long.RData"))
 write_csv(df_long, file = here(data_clean_dir, "df_long.csv"))
 ```
-
-
-
-

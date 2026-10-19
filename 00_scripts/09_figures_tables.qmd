@@ -20,21 +20,23 @@ embed-resources: true
 # Execution options 
 execute:
   warning: false
+
+# Figures in the HTML are drawn with ragg, which shows the falo fonts
+knitr:
+  opts_chunk:
+    dev: "ragg_png"
+    dpi: 300
+    fig.retina: 1
+    fig.width: 6
+    fig.height: 3.7
+    fig.align: "center"
+    out.width: "90%"
 ---
 
 ```{r}
 #| include: false
 # set error messages to English
 Sys.setenv(LANG = "en")
-
-knitr::opts_chunk$set(
-  fig.align = "center", 
-  fig.retina = 3,
-  fig.width = 6, 
-  fig.height = (6 * 0.618),
-  out.width = "90%", 
-  collapse = FALSE
-)
 
 options(
   digits = 4,
@@ -57,16 +59,9 @@ pkgs <- c("here",         # System path management
           "brms",         # Bayesian regression modelling in Stan
           "marginaleffects", # Model-based predictions, comparisons, and more marginalia
           "broom.mixed",  # Tidy model outputs
-          "tidybayes",    # Tools to work with Bayesian models 
+          "tidybayes",    # Tools to work with Bayesian models
           "tinytable",    # Minimalist tables
-          "modelsummary", # Data and model summaries with tables and plots
-          "ggdist",       # Additional plot elements
-          "ggrain",       # For fancy raincloud plots
-          "GGally",       # ggpairs and other ggplot2 friends
-          "ggsignif",     # Add significance to figures
-          "ggh4x",        # Additional ggplot2 tools
-          "patchwork",    # Combine multiple ggplots
-          "showtext"      # Additional fonts for plots etc
+          "ggdist"        # Additional plot elements
           )
 
 groundhog.library(pkgs, "2026-01-01")
@@ -74,57 +69,13 @@ groundhog.library(pkgs, "2026-01-01")
 
 ```{r}
 #| include: false
-
-showtext_auto()
-showtext_opts(dpi = 600)
-
-font_add_google("Public Sans", "Public Sans")
-font_add_google("Public Sans", "Public Sans Light", regular.wt = 300)
-font_add_google("Public Sans", "Public Sans Semibold", regular.wt = 600)
-
-# Custom ggplot theme
-theme_nice <- function() {
-  # General text family and base size
-  theme_minimal(base_family = "Public Sans", base_size = 14) +
-    theme(
-      # Remove minor grid lines for cleaner look
-      panel.grid.minor = element_blank(),
-      # Customize major grid lines color
-      panel.grid.major = element_blank(),
-      # Plot title: bold and custom relative size
-      plot.title = element_text(family = "Public Sans", face = "bold", size = rel(1.1), margin = margin(b = 10)),
-      # Subtitle and caption: lighter weight 
-      plot.subtitle = element_text(family = "Public Sans Light", face = "plain"),
-      plot.caption = element_text(family = "Public Sans Light", face = "plain"),
-      # Axis text: Relative size
-      axis.text = element_text(size = rel(0.9)),
-      # Axis titles: Semibold and custom relative size
-      axis.title = element_text(family = "Public Sans Semibold", size = rel(0.9)),
-      axis.title.x = element_text(hjust = 0.5),
-      axis.title.y = element_text(hjust = 0.5),
-      # Axis lines
-      axis.line = element_line(color = "grey25", linewidth = 0.8),
-      # Facet labels: bold text on grey background
-      strip.text = element_text(
-        family = "Public Sans Semibold", face = "plain",
-        size = rel(1),
-        hjust = 0.5
-      ),
-      strip.background = element_rect(fill = "grey95", color = "grey25", linewidth = 0.8), 
-      # Legend styling: compact and top-positioned
-      legend.title = element_text(family = "Public Sans Semibold", size = rel(0.8)),
-      legend.text = element_text(size = rel(0.8)),
-      legend.position = "top",
-      legend.justification = "center",
-      legend.title.position = "left",
-      legend.margin = margin(l = 0, t = 0)
-    )
+# Figures use the falo theme and fonts: https://github.com/olafborghi/FinallyAmazingLookingOutput
+if (!require("falo", quietly = TRUE)) {
+  if (!require("pak", quietly = TRUE)) install.packages("pak")
+  pak::pak("olafborghi/FinallyAmazingLookingOutput")
 }
-
-
-theme_set(theme_nice())
-update_geom_defaults("text", list(family = "Public Sans"))
-update_geom_defaults("label", list(family = "Public Sans"))
+library("falo")
+theme_set(theme_allround())
 ```
 
 ```{r}
@@ -165,6 +116,19 @@ probability_direction <- function(obj, id = "contrast", by = NULL) {
 }
 ```
 
+```{r}
+hdi_excludes_zero <- function(x, cred = 0.95) {
+  # Whether the 95% HDI excludes zero, using the shortest interval containing 95% of the draws.
+  # This is the HDI algorithm marginaleffects uses for the tables; ggdist::median_hdi() estimates
+  # the HDI from a smoothed density instead, which can differ in the third decimal
+  x <- sort(x)
+  n <- length(x)
+  k <- n - floor(n * cred)
+  i <- which.min(x[(n - k + 1):n] - x[1:k])
+  if_else(sign(x[i]) == sign(x[n - k + i]), "Excludes zero", "Includes zero")
+}
+```
+
 ## RQ 1.1
 
 ### Load Models
@@ -175,6 +139,7 @@ rq1.1.2 <- readRDS(here(model_dir, "RQ1", "m2.rds"))
 rq1.1.3 <- readRDS(here(model_dir, "RQ1", "m3.rds"))
 rq1.1.5 <- readRDS(here(model_dir, "RQ1", "m5.rds"))
 rq1.1.7 <- readRDS(here(model_dir, "RQ1", "m7.rds"))
+rq1.1.8 <- readRDS(here(model_dir, "RQ1", "m8.rds"))
 ```
 
 ### Tables
@@ -188,8 +153,10 @@ rq1.1.2_brms <- tidy(rq1.1.2, robust = TRUE, conf.method	= "HPDinterval", rhat =
   mutate(Model = "Age Group")
 rq1.1.3_brms <- tidy(rq1.1.3, robust = TRUE, conf.method	= "HPDinterval", rhat = TRUE, ess = TRUE) |> 
   mutate(Model = "Gender")
+rq1.1.8_brms <- tidy(rq1.1.8, robust = TRUE, conf.method	= "HPDinterval", rhat = TRUE, ess = TRUE) |> 
+  mutate(Model = "Living Standard")
 
-rq1.1_brms <- bind_rows(rq1.1.1_brms, rq1.1.2_brms, rq1.1.3_brms) |> 
+rq1.1_brms <- bind_rows(rq1.1.1_brms, rq1.1.2_brms, rq1.1.3_brms, rq1.1.8_brms) |> 
   filter(effect == "fixed") |> 
   mutate(term = case_when(
     term == "(Intercept)" ~ "Intercept",
@@ -204,6 +171,12 @@ rq1.1_brms <- bind_rows(rq1.1.1_brms, rq1.1.2_brms, rq1.1.3_brms) |>
     term == "exp_conditionanxiety:genderfemale" ~ "Women x Anxiety",   
     term == "exp_conditionhope:genderother" ~ "Other x Hope",    
     term == "exp_conditionanxiety:genderother" ~ "Other x Anxiety",   
+    term == "living_standardCoping" ~ "Coping (vs. Difficult)",
+    term == "living_standardComfortable" ~ "Comfortable (vs. Difficult)",
+    term == "exp_conditionhope:living_standardCoping" ~ "Coping x Hope",
+    term == "exp_conditionanxiety:living_standardCoping" ~ "Coping x Anxiety",
+    term == "exp_conditionhope:living_standardComfortable" ~ "Comfortable x Hope",
+    term == "exp_conditionanxiety:living_standardComfortable" ~ "Comfortable x Anxiety",
     TRUE ~ term  
   )) |> 
   select(Term = term, 
@@ -215,6 +188,10 @@ rq1.1_brms <- bind_rows(rq1.1.1_brms, rq1.1.2_brms, rq1.1.3_brms) |>
          ESS = ess, 
          Model
          )
+
+n1 <- rq1.1_brms |> filter(Model == "Overall") |> nrow()
+n2 <- rq1.1_brms |> filter(Model == "Age Group") |> nrow()
+n3 <- rq1.1_brms |> filter(Model == "Gender") |> nrow()
 ```
 
 ```{r}
@@ -222,7 +199,12 @@ rq1.1_brms_table <- rq1.1_brms |>
   mutate(across(where(is.numeric), ~round(.x, 3))) |> 
   select(-Model) |> 
   tt() |> 
-  group_tt(i = list("Main Model" = 1, "Interaction with Age Group" = 4, "Interaction with Gender" = 10)) 
+  group_tt(i = list(
+    "Main Model" = 1,
+    "Interaction with Age Group" = n1 + 1,
+    "Interaction with Gender" = n1 + n2 + 1,
+    "Interaction with Living Standard" = n1 + n2 + n3 + 1
+  ))
 
 rq1.1_brms_table
 
@@ -236,6 +218,7 @@ rq1.1_brms_table |>
 rq1.1.1_comp_raw <- avg_comparisons(rq1.1.1, variables = list(exp_condition = "pairwise"))
 rq1.1.2_comp_raw <- avg_comparisons(rq1.1.2, variables = list(exp_condition = "pairwise"), by = "age_group")
 rq1.1.3_comp_raw <- avg_comparisons(rq1.1.3, variables = list(exp_condition = "pairwise"), by = "gender")
+rq1.1.8_comp_raw <- avg_comparisons(rq1.1.8, variables = list(exp_condition = "pairwise"), by = "living_standard")
 
 rq1.1.1_comp <- rq1.1.1_comp_raw |>
   as_tibble() |>
@@ -254,7 +237,13 @@ rq1.1.3_comp <- rq1.1.3_comp_raw |>
   mutate(Model = "Gender") |>
   rename(Group = gender)
 
-rq1.1_comp <- bind_rows(rq1.1.1_comp, rq1.1.2_comp, rq1.1.3_comp) |>
+rq1.1.8_comp <- rq1.1.8_comp_raw |>
+  as_tibble() |>
+  left_join(probability_direction(rq1.1.8_comp_raw, by = "living_standard"), by = c("contrast", "living_standard")) |>
+  mutate(Model = "Living Standard") |>
+  rename(Group = living_standard)
+
+rq1.1_comp <- bind_rows(rq1.1.1_comp, rq1.1.2_comp, rq1.1.3_comp, rq1.1.8_comp) |>
   mutate(
     Contrast = case_when(
       contrast == "anxiety - control" ~ "Anxiety - Control",
@@ -271,6 +260,10 @@ rq1.1_comp <- bind_rows(rq1.1.1_comp, rq1.1.2_comp, rq1.1.3_comp) |>
          "95% HDI Lower" = conf.low,
          "95% HDI Upper" = conf.high,
          "Probability of Direction" = pd)
+
+n1 <- rq1.1_comp |> filter(Model == "Overall") |> nrow()
+n2 <- rq1.1_comp |> filter(Model == "Age Group") |> nrow()
+n3 <- rq1.1_comp |> filter(Model == "Gender") |> nrow()
 ```
 
 ```{r}
@@ -278,7 +271,12 @@ rq1.1_comp_table <- rq1.1_comp |>
   mutate(across(where(is.numeric), ~round(.x, 3))) |> 
   select(-Model) |> 
   tt() |> 
-  group_tt(i = list("Main Model" = 1, "By Age Group" = 4, "By Gender" = 10)) 
+  group_tt(i = list(
+    "Main Model" = 1,
+    "By Age Group" = n1 + 1,
+    "By Gender" = n1 + n2 + 1,
+    "By Living Standard" = n1 + n2 + n3 + 1
+  ))
 
 rq1.1_comp_table
 
@@ -321,7 +319,7 @@ rq1.1.5_brms_table |>
   save_tt(here(table_dir, "RQ1", "prereg_RQ1.1.5_brms_table.docx"), overwrite = TRUE)
 ```
 
-### Figures 
+### Figures
 
 #### Figure Data
 
@@ -330,19 +328,19 @@ rq1.1.5_brms_table |>
 rq1.1.1.draws <- expand.grid(
   exp_condition = c("control", "anxiety", "hope")
 ) |>
-  add_epred_draws(rq1.1.1, re_formula = NA, ndraws = 4000) |>
+  add_epred_draws(rq1.1.1, re_formula = NA) |>
   ungroup()
 
 rq1.1.1.contrasts <- rq1.1.1.draws |>
   select(exp_condition, .draw, .epred) |>
   pivot_wider(names_from = exp_condition, values_from = .epred) |>
   mutate(
-    `Anxiety − Control` = anxiety - control,
-    `Hope − Control` = hope - control,
+    `Anxiety - Control` = anxiety - control,
+    `Hope - Control` = hope - control,
     `Anxiety - Hope` = anxiety - hope
   ) |>
   pivot_longer(
-    cols = c(`Anxiety − Control`, `Hope − Control`, `Anxiety - Hope`),
+    cols = c(`Anxiety - Control`, `Hope - Control`, `Anxiety - Hope`),
     names_to = "contrast",
     values_to = "estimate"
   ) |>
@@ -356,19 +354,19 @@ rq1.1.2.draws <- expand.grid(
   exp_condition = c("control", "anxiety", "hope"),
   age_group = unique(df$age_group)
   ) |>
-  add_epred_draws(rq1.1.2, re_formula = NA, ndraws = 4000) |>
+  add_epred_draws(rq1.1.2, re_formula = NA) |>
   ungroup()
 
 rq1.1.2.contrasts <- rq1.1.2.draws |>
   select(exp_condition, age_group, .draw, .epred) |>
   pivot_wider(names_from = exp_condition, values_from = .epred) |>
   mutate(
-    `Anxiety − Control` = anxiety - control,
-    `Hope − Control` = hope - control,
+    `Anxiety - Control` = anxiety - control,
+    `Hope - Control` = hope - control,
     `Anxiety - Hope` = anxiety - hope
   ) |>
   pivot_longer(
-    cols = c(`Anxiety − Control`, `Hope − Control`, `Anxiety - Hope`),
+    cols = c(`Anxiety - Control`, `Hope - Control`, `Anxiety - Hope`),
     names_to = "contrast",
     values_to = "estimate"
   ) |>
@@ -383,7 +381,7 @@ rq1.1.3.draws <- expand.grid(
   exp_condition = c("control", "anxiety", "hope"),
   gender = unique(df$gender)
 ) |>
-  add_epred_draws(rq1.1.3, re_formula = NA, ndraws = 4000) |>
+  add_epred_draws(rq1.1.3, re_formula = NA) |>
   ungroup() |> 
   filter(gender != "other")
 
@@ -391,12 +389,12 @@ rq1.1.3.contrasts <- rq1.1.3.draws |>
   select(exp_condition, gender, .draw, .epred) |>
   pivot_wider(names_from = exp_condition, values_from = .epred) |>
   mutate(
-    `Anxiety − Control` = anxiety - control,
-    `Hope − Control` = hope - control,
+    `Anxiety - Control` = anxiety - control,
+    `Hope - Control` = hope - control,
     `Anxiety - Hope` = anxiety - hope
   ) |>
   pivot_longer(
-    cols = c(`Anxiety − Control`, `Hope − Control`, `Anxiety - Hope`),
+    cols = c(`Anxiety - Control`, `Hope - Control`, `Anxiety - Hope`),
     names_to = "contrast",
     values_to = "estimate"
   ) |>
@@ -406,16 +404,42 @@ rq1.1.3.contrasts <- rq1.1.3.draws |>
   ) |>
   select(-gender)
 
-rq1.1_posterior_data <- bind_rows(rq1.1.1.contrasts, rq1.1.2.contrasts, rq1.1.3.contrasts) |>
+# cATE by living standard
+rq1.1.8.draws <- expand.grid(
+  exp_condition = c("control", "anxiety", "hope"),
+  living_standard = levels(rq1.1.8$data$living_standard)
+) |>
+  add_epred_draws(rq1.1.8, re_formula = NA) |>
+  ungroup()
+
+rq1.1.8.contrasts <- rq1.1.8.draws |>
+  select(exp_condition, living_standard, .draw, .epred) |>
+  pivot_wider(names_from = exp_condition, values_from = .epred) |>
   mutate(
-    contrast = factor(contrast, levels = c("Anxiety - Hope", "Anxiety − Control", "Hope − Control")),
-    model = factor(model, levels = c("ATE", "Age", "Gender"))
+    `Anxiety - Control` = anxiety - control,
+    `Hope - Control` = hope - control,
+    `Anxiety - Hope` = anxiety - hope
+  ) |>
+  pivot_longer(
+    cols = c(`Anxiety - Control`, `Hope - Control`, `Anxiety - Hope`),
+    names_to = "contrast",
+    values_to = "estimate"
+  ) |>
+  mutate(
+    model = "Living Standard",
+    subgroup = as.character(living_standard)
+  ) |>
+  select(-living_standard)
+
+rq1.1_posterior_data <- bind_rows(rq1.1.1.contrasts, rq1.1.2.contrasts, rq1.1.3.contrasts, rq1.1.8.contrasts) |>
+  mutate(
+    contrast = factor(contrast, levels = c("Anxiety - Hope", "Anxiety - Control", "Hope - Control")),
+    model = factor(model, levels = c("ATE", "Age", "Gender", "Living Standard"))
   )
 
 # Compute whether HDI excludes zero for each group
 rq1.1_hdi_check <- rq1.1_posterior_data |>
   mutate(
-    estimate = estimate,
     subgroup = case_when(
       subgroup == "male" ~ "Men",
       subgroup == "female" ~ "Women",
@@ -423,22 +447,18 @@ rq1.1_hdi_check <- rq1.1_posterior_data |>
       subgroup == "22-26 years" ~ "22-26",
       TRUE ~ subgroup
     ),
-    subgroup = factor(subgroup, levels = c("ATE", "22-26", "16-21", "Women", "Men"))
+    subgroup = factor(subgroup, levels = c("ATE", "22-26", "16-21", "Women", "Men",
+                                           "Comfortable", "Coping", "Difficult"))
   ) |>
   group_by(model, contrast, subgroup) |>
-  median_hdi(estimate, .width = 0.95) |>
-  mutate(excludes_zero = if_else(sign(.lower) == sign(.upper), "Excludes zero", "Includes zero")) |>
-  select(model, contrast, subgroup, excludes_zero)
+  summarise(excludes_zero = hdi_excludes_zero(estimate), .groups = "drop")
 ```
 
 #### RQ1.1 Figure
 
 ```{r}
-#| fig-height: 5.5
+#| fig-height: 7
 #| fig-width: 8
-#| fig-dpi: 600
-#| fig-showtext: TRUE
-showtext_opts(dpi = 600)
 
 rq1.1_posterior_data |>
   mutate(
@@ -450,7 +470,8 @@ rq1.1_posterior_data |>
       subgroup == "22-26 years" ~ "22-26",
       TRUE ~ subgroup
     ),
-    subgroup = factor(subgroup, levels = c("ATE", "22-26", "16-21", "Women", "Men"))
+    subgroup = factor(subgroup, levels = c("ATE", "22-26", "16-21", "Women", "Men",
+                                           "Comfortable", "Coping", "Difficult"))
   ) |>
   left_join(rq1.1_hdi_check, by = c("model", "contrast", "subgroup")) |>
   ggplot(aes(x = estimate, y = subgroup, fill = excludes_zero)) +
@@ -470,27 +491,21 @@ rq1.1_posterior_data |>
     values = c("Excludes zero" = "#364B9A", "Includes zero" = "#4A7BB7"),
     name = "95% HDI",
   ) +
-  # scale_color_manual(
-  #   values = c("Excludes zero" = "#364B9A", "Includes zero" = "#4A7BB7"),
-  #   name = "95% HDI",
-  # ) +
-  scale_x_continuous(limits = c(-10, 10), breaks = seq(-10, 10, by = 5), expand = expansion(add = 2.5)) +
+  scale_x_continuous(breaks = seq(-10, 10, by = 5), expand = expansion(add = 2.5)) +
+  coord_cartesian(xlim = c(-10, 10)) +
   labs(
     x = "Percentage Points",
     y = NULL,
     title = "Effects on Democratic Support",
     subtitle = "Posterior Distributions with Median and 95% HDI"
   ) +
-  theme_nice() +
+  theme_allround() +
   theme(
     legend.position = "bottom",
     panel.grid.major.x = element_line(color = "grey90", linewidth = 0.2)
   ) 
 
-ggsave(here(figure_dir, "RQ1", "RQ1.1_figure.png"),
-       height = 5.5,
-       width = 8,
-       dpi = 600)
+ggsave(here(figure_dir, "RQ1", "RQ1.1_figure.svg"), height = 7, width = 8, web_fonts = falo_svg_fonts())
 ```
 
 #### RQ1.1 Item-Level Differences Figure
@@ -528,7 +543,7 @@ df_dem_items <- df |>
 rq1.1.7.draws <- expand.grid(
   exp_condition = c("control", "anxiety", "hope"),
   item = levels(df_dem_items$item)) |>
-  add_epred_draws(rq1.1.7, re_formula = NA, ndraws = 4000) |>
+  add_epred_draws(rq1.1.7, re_formula = NA) |>
   ungroup()
 
 # Compute item-level pairwise contrasts 
@@ -536,12 +551,12 @@ rq1.1.7.item_contrasts <- rq1.1.7.draws |>
   select(exp_condition, item, .draw, .epred) |>
   pivot_wider(names_from = exp_condition, values_from = .epred) |>
   mutate(
-    `Anxiety − Control` = anxiety - control,
-    `Hope − Control` = hope - control,
+    `Anxiety - Control` = anxiety - control,
+    `Hope - Control` = hope - control,
     `Anxiety - Hope` = anxiety - hope
   ) |>
   pivot_longer(
-    cols = c(`Anxiety − Control`, `Hope − Control`, `Anxiety - Hope`),
+    cols = c(`Anxiety - Control`, `Hope - Control`, `Anxiety - Hope`),
     names_to = "contrast",
     values_to = "estimate"
   ) |>
@@ -560,24 +575,19 @@ rq1.1.7.avg_contrasts <- rq1.1.7.item_contrasts |>
 rq1.1.7.contrasts <- bind_rows(rq1.1.7.item_contrasts, rq1.1.7.avg_contrasts) |>
   mutate(
     item = factor(item, levels = c(levels(df_dem_items$item), "Overall ATE")),
-    contrast = factor(contrast, levels = c("Anxiety - Hope", "Anxiety − Control", "Hope − Control"))
+    contrast = factor(contrast, levels = c("Anxiety - Hope", "Anxiety - Control", "Hope - Control"))
   )
 
 # Compute whether HDI excludes zero for each item
 rq1.1.7.hdi_check <- rq1.1.7.contrasts |>
   mutate(estimate = estimate * 100) |>
   group_by(item, contrast) |>
-  median_hdi(estimate, .width = 0.95) |>
-  mutate(excludes_zero = if_else(sign(.lower) == sign(.upper), "Excludes zero", "Includes zero")) |>
-  select(item, contrast, excludes_zero)
+  summarise(excludes_zero = hdi_excludes_zero(estimate), .groups = "drop")
 ```
 
 ```{r}
 #| fig-height: 5
 #| fig-width: 10
-#| fig-dpi: 600
-#| fig-showtext: TRUE
-showtext_opts(dpi = 600)
 
 rq1.1.7.contrasts |>
   mutate(estimate = estimate * 100) |>
@@ -599,27 +609,21 @@ rq1.1.7.contrasts |>
     name = "95% HDI",
     values = c("Excludes zero" = "#364B9A", "Includes zero" = "#4A7BB7"),
   ) +
-  # scale_color_manual(
-  #   name = "95% HDI",
-  #   values = c("Excludes zero" = "#364B9A", "Includes zero" = "#4A7BB7"),
-  # ) +
-  scale_x_continuous(limits = c(-15, 15), breaks = seq(-10, 10, by = 5), expand = expansion(add = 2.5)) +
+  scale_x_continuous(breaks = seq(-10, 10, by = 5), expand = expansion(add = 2.5)) +
+  coord_cartesian(xlim = c(-15, 15)) +
   labs(
     x = "Percentage Points",
     y = NULL,
     title = "Treatment Effects on Democratic Support",
     subtitle = "Posterior Distributions with Median and 95% HDI"
   ) +
-  theme_nice() +
+  theme_allround() +
   theme(
     panel.grid.major.x = element_line(color = "grey90", linewidth = 0.2),
     legend.position = "bottom"
   )
 
-ggsave(here(figure_dir, "RQ1", "RQ1.1_item_figure.png"),
-       height = 5,
-       width = 10,
-       dpi = 600)
+ggsave(here(figure_dir, "RQ1", "RQ1.1_item_figure.svg"), height = 5, width = 10, web_fonts = falo_svg_fonts())
 ```
 
 ## RQ 1.2
@@ -629,6 +633,7 @@ rq1.2.1 <- readRDS(here(model_dir, "RQ1", "cj1.rds"))
 rq1.2.2 <- readRDS(here(model_dir, "RQ1", "cj2.rds"))
 rq1.2.3 <- readRDS(here(model_dir, "RQ1", "cj3.rds"))
 rq1.2.5 <- readRDS(here(model_dir, "RQ1", "cj5.rds"))
+rq1.2.8 <- readRDS(here(model_dir, "RQ1", "cj8.rds"))
 ```
 
 ### Tables
@@ -659,7 +664,12 @@ rq1.2.3_brms <- bind_rows(
   tidy(rq1.2.3, parameters = "^sd_", robust = TRUE, conf.method = "HPDinterval", rhat = TRUE, ess = TRUE)
 ) |> mutate(Model = "Gender")
 
-rq1.2_brms <- bind_rows(rq1.2.1_brms, rq1.2.2_brms, rq1.2.3_brms) |>
+rq1.2.8_brms <- bind_rows(
+  tidy(rq1.2.8, parameters = "b",    robust = TRUE, conf.method = "HPDinterval", rhat = TRUE, ess = TRUE),
+  tidy(rq1.2.8, parameters = "^sd_", robust = TRUE, conf.method = "HPDinterval", rhat = TRUE, ess = TRUE)
+) |> mutate(Model = "Living Standard")
+
+rq1.2_brms <- bind_rows(rq1.2.1_brms, rq1.2.2_brms, rq1.2.3_brms, rq1.2.8_brms) |>
   filter(!term %in% conjoint_controls) |>
   mutate(term = str_remove(term, "^b_")) |>
   mutate(term = case_when(
@@ -688,6 +698,18 @@ rq1.2_brms <- bind_rows(rq1.2.1_brms, rq1.2.2_brms, rq1.2.3_brms) |>
     term == "conjoint_demDemocratic:exp_conditionanxiety:genderfemale"         ~ "Democratic × Anxiety × Women",
     term == "conjoint_demDemocratic:exp_conditionhope:genderother"             ~ "Democratic × Hope × Other",
     term == "conjoint_demDemocratic:exp_conditionanxiety:genderother"          ~ "Democratic × Anxiety × Other",
+    term == "living_standardCoping"                                            ~ "Coping (vs. Difficult)",
+    term == "living_standardComfortable"                                       ~ "Comfortable (vs. Difficult)",
+    term == "conjoint_demDemocratic:living_standardCoping"                     ~ "Democratic × Coping",
+    term == "conjoint_demDemocratic:living_standardComfortable"                ~ "Democratic × Comfortable",
+    term == "exp_conditionhope:living_standardCoping"                          ~ "Coping × Hope",
+    term == "exp_conditionanxiety:living_standardCoping"                       ~ "Coping × Anxiety",
+    term == "exp_conditionhope:living_standardComfortable"                     ~ "Comfortable × Hope",
+    term == "exp_conditionanxiety:living_standardComfortable"                  ~ "Comfortable × Anxiety",
+    term == "conjoint_demDemocratic:exp_conditionhope:living_standardCoping"         ~ "Democratic × Hope × Coping",
+    term == "conjoint_demDemocratic:exp_conditionanxiety:living_standardCoping"      ~ "Democratic × Anxiety × Coping",
+    term == "conjoint_demDemocratic:exp_conditionhope:living_standardComfortable"    ~ "Democratic × Hope × Comfortable",
+    term == "conjoint_demDemocratic:exp_conditionanxiety:living_standardComfortable" ~ "Democratic × Anxiety × Comfortable",
     TRUE ~ term
   )) |>
   select(Term = term, Median = estimate, MAD = std.error,
@@ -696,6 +718,7 @@ rq1.2_brms <- bind_rows(rq1.2.1_brms, rq1.2.2_brms, rq1.2.3_brms) |>
 
 n1 <- rq1.2_brms |> filter(Model == "Overall") |> nrow()
 n2 <- rq1.2_brms |> filter(Model == "Age Group") |> nrow()
+n3 <- rq1.2_brms |> filter(Model == "Gender") |> nrow()
 ```
 
 ```{r}
@@ -706,7 +729,8 @@ rq1.2_brms_table <- rq1.2_brms |>
   group_tt(i = list(
     "Main Model" = 1,
     "Interaction with Age Group" = n1 + 1,
-    "Interaction with Gender" = n1 + n2 + 1
+    "Interaction with Gender" = n1 + n2 + 1,
+    "Interaction with Living Standard" = n1 + n2 + n3 + 1
   ))
 
 rq1.2_brms_table
@@ -720,6 +744,7 @@ rq1.2_brms_table |>
 rq1.2.1_comp_raw <- avg_comparisons(rq1.2.1, variables = list(conjoint_dem = "pairwise"), by = "exp_condition", hypothesis = ~pairwise)
 rq1.2.2_comp_raw <- avg_comparisons(rq1.2.2, variables = list(conjoint_dem = "pairwise"), by = c("exp_condition", "age_group"), hypothesis = ~pairwise)
 rq1.2.3_comp_raw <- avg_comparisons(rq1.2.3, variables = list(conjoint_dem = "pairwise"), by = c("exp_condition", "gender"), hypothesis = ~pairwise)
+rq1.2.8_comp_raw <- avg_comparisons(rq1.2.8, variables = list(conjoint_dem = "pairwise"), by = c("exp_condition", "living_standard"), hypothesis = ~pairwise)
 
 within_age <- c(
   "(hope 16-21 years) - (control 16-21 years)",
@@ -740,6 +765,18 @@ within_gender <- c(
   "(hope other) - (control other)",
   "(anxiety other) - (control other)",
   "(anxiety other) - (hope other)"
+)
+
+within_living_standard <- c(
+  "(hope Difficult) - (control Difficult)",
+  "(anxiety Difficult) - (control Difficult)",
+  "(anxiety Difficult) - (hope Difficult)",
+  "(hope Coping) - (control Coping)",
+  "(anxiety Coping) - (control Coping)",
+  "(anxiety Coping) - (hope Coping)",
+  "(hope Comfortable) - (control Comfortable)",
+  "(anxiety Comfortable) - (control Comfortable)",
+  "(anxiety Comfortable) - (hope Comfortable)"
 )
 
 rq1.2.1_comp <- rq1.2.1_comp_raw |>
@@ -783,7 +820,25 @@ rq1.2.3_comp <- rq1.2.3_comp_raw |>
       str_detect(hypothesis, "other")  ~ "Other")
   )
 
-rq1.2_comp <- bind_rows(rq1.2.1_comp, rq1.2.2_comp, rq1.2.3_comp) |>
+rq1.2.8_comp <- rq1.2.8_comp_raw |>
+  as_tibble() |>
+  filter(hypothesis %in% within_living_standard) |>
+  left_join(
+    posterior_draws(rq1.2.8_comp_raw) |>
+      filter(hypothesis %in% within_living_standard) |>
+      group_by(hypothesis) |>
+      summarise(pd = (\(p) max(p, 1 - p))(mean(draw > 0)), .groups = "drop"),
+    by = "hypothesis"
+  ) |>
+  mutate(
+    Model = "Living Standard",
+    Group = case_when(
+      str_detect(hypothesis, "Difficult")   ~ "Difficult",
+      str_detect(hypothesis, "Coping")      ~ "Coping",
+      str_detect(hypothesis, "Comfortable") ~ "Comfortable")
+  )
+
+rq1.2_comp <- bind_rows(rq1.2.1_comp, rq1.2.2_comp, rq1.2.3_comp, rq1.2.8_comp) |>
   mutate(Contrast = case_when(
     str_detect(hypothesis, "^\\(hope")    & str_detect(hypothesis, "control") ~ "Hope - Control",
     str_detect(hypothesis, "^\\(anxiety") & str_detect(hypothesis, "control") ~ "Anxiety - Control",
@@ -797,6 +852,7 @@ rq1.2_comp <- bind_rows(rq1.2.1_comp, rq1.2.2_comp, rq1.2.3_comp) |>
 
 n1 <- rq1.2_comp |> filter(Model == "Overall") |> nrow()
 n2 <- rq1.2_comp |> filter(Model == "Age Group") |> nrow()
+n3 <- rq1.2_comp |> filter(Model == "Gender") |> nrow()
 ```
 
 ```{r}
@@ -804,7 +860,12 @@ rq1.2_comp_table <- rq1.2_comp |>
   mutate(across(where(is.numeric), ~round(.x, 3))) |>
   select(-Model) |>
   tt() |>
-  group_tt(i = list("Main Model" = 1, "By Age Group" = n1 + 1, "By Gender" = n1 + n2 + 1))
+  group_tt(i = list(
+    "Main Model" = 1,
+    "By Age Group" = n1 + 1,
+    "By Gender" = n1 + n2 + 1,
+    "By Living Standard" = n1 + n2 + n3 + 1
+  ))
 
 rq1.2_comp_table
 rq1.2_comp_table |>
@@ -845,7 +906,7 @@ rq1.2.5_brms_table |>
   save_tt(here(table_dir, "RQ1", "prereg_RQ1.2.5_brms_table.docx"), overwrite = TRUE)
 ```
 
-### Figures 
+### Figures
 
 #### Figure Data
 
@@ -906,7 +967,26 @@ rq1.2.3.contrasts <- rq1.2.3.cAMCEs |>
   mutate(model = "Gender", subgroup = as.character(gender)) |>
   select(-gender)
 
-rq1.2_posterior_data <- bind_rows(rq1.2.1.contrasts, rq1.2.2.contrasts, rq1.2.3.contrasts) |>
+rq1.2.8.cAMCEs <- avg_slopes(rq1.2.8, variables = "conjoint_dem", by = c("exp_condition", "living_standard"), re_formula = NA) |>
+  posterior_draws()
+
+rq1.2.8.contrasts <- rq1.2.8.cAMCEs |>
+  select(drawid, exp_condition, living_standard, draw) |>
+  pivot_wider(names_from = exp_condition, values_from = draw) |>
+  mutate(
+    `Anxiety - Control` = anxiety - control,
+    `Hope - Control`    = hope - control,
+    `Anxiety - Hope`    = anxiety - hope
+  ) |>
+  pivot_longer(
+    cols = c(`Anxiety - Control`, `Hope - Control`, `Anxiety - Hope`),
+    names_to = "contrast",
+    values_to = "estimate"
+  ) |>
+  mutate(model = "Living Standard", subgroup = as.character(living_standard)) |>
+  select(-living_standard)
+
+rq1.2_posterior_data <- bind_rows(rq1.2.1.contrasts, rq1.2.2.contrasts, rq1.2.3.contrasts, rq1.2.8.contrasts) |>
   filter(subgroup != "other") |>
   mutate(
     subgroup = case_when(
@@ -917,25 +997,21 @@ rq1.2_posterior_data <- bind_rows(rq1.2.1.contrasts, rq1.2.2.contrasts, rq1.2.3.
       TRUE ~ subgroup
     ),
     contrast = factor(contrast, levels = c("Anxiety - Hope", "Anxiety - Control", "Hope - Control")),
-    model    = factor(model, levels = c("ATE", "Age", "Gender")),
-    subgroup = factor(subgroup, levels = c("ATE", "22-26", "16-21", "Women", "Men"))
+    model    = factor(model, levels = c("ATE", "Age", "Gender", "Living Standard")),
+    subgroup = factor(subgroup, levels = c("ATE", "22-26", "16-21", "Women", "Men",
+                                           "Comfortable", "Coping", "Difficult"))
   )
 
 rq1.2_hdi_check <- rq1.2_posterior_data |>
   group_by(model, contrast, subgroup) |>
-  median_hdi(estimate, .width = 0.95) |>
-  mutate(excludes_zero = if_else(sign(.lower) == sign(.upper), "Excludes zero", "Includes zero")) |>
-  select(model, contrast, subgroup, excludes_zero)
+  summarise(excludes_zero = hdi_excludes_zero(estimate), .groups = "drop")
 ```
 
 #### RQ1.2 Figure
 
 ```{r}
-#| fig-height: 5.5
+#| fig-height: 7
 #| fig-width: 8
-#| fig-dpi: 600
-#| fig-showtext: TRUE
-showtext_opts(dpi = 600)
 
 rq1.2_posterior_data |>
   mutate(estimate = estimate * 100) |>
@@ -958,26 +1034,105 @@ rq1.2_posterior_data |>
     values = c("Excludes zero" = "#364B9A", "Includes zero" = "#4A7BB7"),
     name = "95% HDI"
   ) +
-  scale_x_continuous(limits = c(-20, 20), breaks = seq(-15, 15, by = 5), expand = expansion(add = 0.5)) +
+  scale_x_continuous(breaks = seq(-15, 15, by = 5), expand = expansion(add = 0.5)) +
+  coord_cartesian(xlim = c(-20, 20)) +
   labs(
     x = "Percentage Points",
     y = NULL,
     title = "Effects on Democratic Candidate Preference",
     subtitle = "Posterior Distributions with Median and 95% HDI"
   ) +
-  theme_nice() +
+  theme_allround() +
   theme(
     legend.position = "bottom",
     panel.grid.major.x = element_line(color = "grey90", linewidth = 0.2)
   )
 
-ggsave(here(figure_dir, "RQ1", "RQ1.2_figure.png"),
-       height = 5.5,
-       width = 8,
-       dpi = 600)
+ggsave(here(figure_dir, "RQ1", "RQ1.2_figure.svg"), height = 7, width = 8, web_fonts = falo_svg_fonts())
 ```
 
-## RQ 2.1 
+### Party Marginal Means
+
+Marginal means of party by condition from the party model in 06_conjoint_candidate_models.
+
+```{r}
+rq1.2.party <- readRDS(here(model_dir, "RQ1", "cj_party.rds"))
+
+party_mm_raw <- avg_predictions(rq1.2.party, by = c("conjoint_party", "exp_condition"))
+party_diff_raw <- avg_predictions(rq1.2.party, by = c("conjoint_party", "exp_condition"),
+                                  hypothesis = difference ~ pairwise | conjoint_party)
+
+party_mm <- party_mm_raw |>
+  as_tibble() |>
+  mutate(Block = "Marginal Means",
+         Comparison = str_to_title(exp_condition),
+         pd = NA_real_)
+
+party_diff <- party_diff_raw |>
+  as_tibble() |>
+  left_join(probability_direction(party_diff_raw, id = "hypothesis", by = "conjoint_party"),
+            by = c("hypothesis", "conjoint_party")) |>
+  mutate(Block = "Differences Between Conditions",
+         Comparison = hypothesis |> str_remove_all("[()]") |> str_to_title())
+
+party_table_data <- bind_rows(party_mm, party_diff) |>
+  select(Block,
+         Party = conjoint_party,
+         "Condition / Contrast" = Comparison,
+         Median = estimate,
+         "95% HDI Lower" = conf.low,
+         "95% HDI Upper" = conf.high,
+         "Probability of Direction" = pd)
+```
+
+```{r}
+party_table <- party_table_data |>
+  mutate(across(where(is.numeric), ~round(.x, 3)),
+         # Probability of direction is only defined for the differences
+         `Probability of Direction` = if_else(is.na(`Probability of Direction`), "",
+                                              sprintf("%.3f", `Probability of Direction`))) |>
+  select(-Block) |>
+  tt(notes = paste("Note. Marginal means are the predicted probabilities of choosing a candidate of each party",
+                   "in each condition, averaged over the other attributes (candidate sex, age, democratic behaviour,",
+                   "and economic reputation), from a Bayesian logistic mixed-effects model with a party × condition",
+                   "interaction. Differences between conditions are in probability units.")) |>
+  group_tt(i = list(
+    "Marginal Means" = 1,
+    "Differences Between Conditions" = nrow(party_mm) + 1
+  ))
+
+party_table
+party_table |>
+  save_tt(here(table_dir, "RQ1", "RQ1.2_party_table.docx"), overwrite = TRUE)
+```
+
+```{r}
+#| fig-height: 5
+#| fig-width: 7
+party_mm |>
+  mutate(Condition = factor(Comparison, levels = c("Control", "Hope", "Anxiety"))) |>
+  ggplot(aes(x = estimate, y = fct_rev(conjoint_party), color = Condition)) +
+  geom_vline(xintercept = 0.5, linetype = "dashed", color = "gray40", linewidth = 0.6) +
+  geom_pointrange(aes(xmin = conf.low, xmax = conf.high),
+                  position = position_dodge(width = 0.6),
+                  size = 0.5, linewidth = 1) +
+  scale_x_continuous(labels = scales::percent) +
+  scale_color_manual(values = c("Anxiety" = "#AA3377", "Hope" = "#66CCEE", "Control" = "#BBBBBB"),
+                     guide = guide_legend(reverse = TRUE)) +
+  labs(
+    x = "Probability of Choosing Candidate",
+    y = NULL,
+    title = "Marginal Means of Party by Condition",
+    subtitle = "Posterior Median and 95% HDI",
+    color = "Condition"
+  ) +
+  theme_allround() +
+  theme(panel.grid.major.x = element_line(color = "grey90", linewidth = 0.2))
+
+ggsave(here(figure_dir, "RQ1", "RQ1.2_party_figure.svg"), height = 5, width = 7, web_fonts = falo_svg_fonts())
+```
+
+## RQ 2.1
 
 ```{r}
 rq2.1.1 <- readRDS(here(model_dir, "RQ2", "m1.rds"))
@@ -985,6 +1140,7 @@ rq2.1.2 <- readRDS(here(model_dir, "RQ2", "m2.rds"))
 rq2.1.3 <- readRDS(here(model_dir, "RQ2", "m3.rds"))
 rq2.1.5 <- readRDS(here(model_dir, "RQ2", "m5.rds"))
 rq2.1.7 <- readRDS(here(model_dir, "RQ2", "m7.rds"))
+rq2.1.8 <- readRDS(here(model_dir, "RQ2", "m8.rds"))
 ```
 
 ### Tables
@@ -998,8 +1154,10 @@ rq2.1.2_brms <- tidy(rq2.1.2, robust = TRUE, conf.method	= "HPDinterval", rhat =
   mutate(Model = "Age Group")
 rq2.1.3_brms <- tidy(rq2.1.3, robust = TRUE, conf.method	= "HPDinterval", rhat = TRUE, ess = TRUE) |> 
   mutate(Model = "Gender")
+rq2.1.8_brms <- tidy(rq2.1.8, robust = TRUE, conf.method	= "HPDinterval", rhat = TRUE, ess = TRUE) |> 
+  mutate(Model = "Living Standard")
 
-rq2.1_brms <- bind_rows(rq2.1.1_brms, rq2.1.2_brms, rq2.1.3_brms) |> 
+rq2.1_brms <- bind_rows(rq2.1.1_brms, rq2.1.2_brms, rq2.1.3_brms, rq2.1.8_brms) |> 
   filter(effect == "fixed") |> 
   mutate(term = case_when(
     term == "(Intercept)" ~ "Intercept",
@@ -1014,6 +1172,12 @@ rq2.1_brms <- bind_rows(rq2.1.1_brms, rq2.1.2_brms, rq2.1.3_brms) |>
     term == "exp_conditionanxiety:genderfemale" ~ "Women x Anxiety",   
     term == "exp_conditionhope:genderother" ~ "Other x Hope",    
     term == "exp_conditionanxiety:genderother" ~ "Other x Anxiety",   
+    term == "living_standardCoping" ~ "Coping (vs. Difficult)",
+    term == "living_standardComfortable" ~ "Comfortable (vs. Difficult)",
+    term == "exp_conditionhope:living_standardCoping" ~ "Coping x Hope",
+    term == "exp_conditionanxiety:living_standardCoping" ~ "Coping x Anxiety",
+    term == "exp_conditionhope:living_standardComfortable" ~ "Comfortable x Hope",
+    term == "exp_conditionanxiety:living_standardComfortable" ~ "Comfortable x Anxiety",
     TRUE ~ term  
   )) |> 
   select(Term = term, 
@@ -1025,6 +1189,10 @@ rq2.1_brms <- bind_rows(rq2.1.1_brms, rq2.1.2_brms, rq2.1.3_brms) |>
          ESS = ess, 
          Model
   )
+
+n1 <- rq2.1_brms |> filter(Model == "Overall") |> nrow()
+n2 <- rq2.1_brms |> filter(Model == "Age Group") |> nrow()
+n3 <- rq2.1_brms |> filter(Model == "Gender") |> nrow()
 ```
 
 ```{r}
@@ -1032,7 +1200,12 @@ rq2.1_brms_table <- rq2.1_brms |>
   mutate(across(where(is.numeric), ~round(.x, 3))) |> 
   select(-Model) |> 
   tt() |> 
-  group_tt(i = list("Main Model" = 1, "Interaction with Age Group" = 4, "Interaction with Gender" = 10)) 
+  group_tt(i = list(
+    "Main Model" = 1,
+    "Interaction with Age Group" = n1 + 1,
+    "Interaction with Gender" = n1 + n2 + 1,
+    "Interaction with Living Standard" = n1 + n2 + n3 + 1
+  ))
 
 rq2.1_brms_table
 
@@ -1040,12 +1213,13 @@ rq2.1_brms_table |>
   save_tt(here(table_dir, "RQ2", "rq2.1_brms_table.docx"), overwrite = TRUE)
 ```
 
-#### RQ2.1 Comparison Table
+#### RQ2.1 Comparisons Table
 
 ```{r}
 rq2.1.1_comp_raw <- avg_comparisons(rq2.1.1, variables = list(exp_condition = "pairwise"))
 rq2.1.2_comp_raw <- avg_comparisons(rq2.1.2, variables = list(exp_condition = "pairwise"), by = "age_group")
 rq2.1.3_comp_raw <- avg_comparisons(rq2.1.3, variables = list(exp_condition = "pairwise"), by = "gender")
+rq2.1.8_comp_raw <- avg_comparisons(rq2.1.8, variables = list(exp_condition = "pairwise"), by = "living_standard")
 
 rq2.1.1_comp <- rq2.1.1_comp_raw |>
   as_tibble() |>
@@ -1064,7 +1238,13 @@ rq2.1.3_comp <- rq2.1.3_comp_raw |>
   mutate(Model = "Gender") |>
   rename(Group = gender)
 
-rq2.1_comp <- bind_rows(rq2.1.1_comp, rq2.1.2_comp, rq2.1.3_comp) |>
+rq2.1.8_comp <- rq2.1.8_comp_raw |>
+  as_tibble() |>
+  left_join(probability_direction(rq2.1.8_comp_raw, by = "living_standard"), by = c("contrast", "living_standard")) |>
+  mutate(Model = "Living Standard") |>
+  rename(Group = living_standard)
+
+rq2.1_comp <- bind_rows(rq2.1.1_comp, rq2.1.2_comp, rq2.1.3_comp, rq2.1.8_comp) |>
   mutate(
     Contrast = case_when(
       contrast == "anxiety - control" ~ "Anxiety - Control",
@@ -1081,6 +1261,10 @@ rq2.1_comp <- bind_rows(rq2.1.1_comp, rq2.1.2_comp, rq2.1.3_comp) |>
          "95% HDI Lower" = conf.low,
          "95% HDI Upper" = conf.high,
          "Probability of Direction" = pd)
+
+n1 <- rq2.1_comp |> filter(Model == "Overall") |> nrow()
+n2 <- rq2.1_comp |> filter(Model == "Age Group") |> nrow()
+n3 <- rq2.1_comp |> filter(Model == "Gender") |> nrow()
 ```
 
 ```{r}
@@ -1088,7 +1272,12 @@ rq2.1_comp_table <- rq2.1_comp |>
   mutate(across(where(is.numeric), ~round(.x, 3))) |> 
   select(-Model) |> 
   tt() |> 
-  group_tt(i = list("Main Model" = 1, "By Age Group" = 4, "By Gender" = 10)) 
+  group_tt(i = list(
+    "Main Model" = 1,
+    "By Age Group" = n1 + 1,
+    "By Gender" = n1 + n2 + 1,
+    "By Living Standard" = n1 + n2 + n3 + 1
+  ))
 
 rq2.1_comp_table
 
@@ -1140,19 +1329,19 @@ rq2.1.5_brms_table |>
 rq2.1.1.draws <- expand.grid(
   exp_condition = c("control", "anxiety", "hope")
 ) |>
-  add_epred_draws(rq2.1.1, re_formula = NA, ndraws = 4000) |>
+  add_epred_draws(rq2.1.1, re_formula = NA) |>
   ungroup()
 
 rq2.1.1.contrasts <- rq2.1.1.draws |>
   select(exp_condition, .draw, .epred) |>
   pivot_wider(names_from = exp_condition, values_from = .epred) |>
   mutate(
-    `Anxiety − Control` = anxiety - control,
-    `Hope − Control` = hope - control,
+    `Anxiety - Control` = anxiety - control,
+    `Hope - Control` = hope - control,
     `Anxiety - Hope` = anxiety - hope
   ) |>
   pivot_longer(
-    cols = c(`Anxiety − Control`, `Hope − Control`, `Anxiety - Hope`),
+    cols = c(`Anxiety - Control`, `Hope - Control`, `Anxiety - Hope`),
     names_to = "contrast",
     values_to = "estimate"
   ) |>
@@ -1166,19 +1355,19 @@ rq2.1.2.draws <- expand.grid(
   exp_condition = c("control", "anxiety", "hope"),
   age_group = unique(df$age_group)
 ) |>
-  add_epred_draws(rq2.1.2, re_formula = NA, ndraws = 4000) |>
+  add_epred_draws(rq2.1.2, re_formula = NA) |>
   ungroup()
 
 rq2.1.2.contrasts <- rq2.1.2.draws |>
   select(exp_condition, age_group, .draw, .epred) |>
   pivot_wider(names_from = exp_condition, values_from = .epred) |>
   mutate(
-    `Anxiety − Control` = anxiety - control,
-    `Hope − Control` = hope - control,
+    `Anxiety - Control` = anxiety - control,
+    `Hope - Control` = hope - control,
     `Anxiety - Hope` = anxiety - hope
   ) |>
   pivot_longer(
-    cols = c(`Anxiety − Control`, `Hope − Control`, `Anxiety - Hope`),
+    cols = c(`Anxiety - Control`, `Hope - Control`, `Anxiety - Hope`),
     names_to = "contrast",
     values_to = "estimate"
   ) |>
@@ -1193,7 +1382,7 @@ rq2.1.3.draws <- expand.grid(
   exp_condition = c("control", "anxiety", "hope"),
   gender = unique(df$gender)
 ) |>
-  add_epred_draws(rq2.1.3, re_formula = NA, ndraws = 4000) |>
+  add_epred_draws(rq2.1.3, re_formula = NA) |>
   ungroup() |> 
   filter(gender != "other")
 
@@ -1201,12 +1390,12 @@ rq2.1.3.contrasts <- rq2.1.3.draws |>
   select(exp_condition, gender, .draw, .epred) |>
   pivot_wider(names_from = exp_condition, values_from = .epred) |>
   mutate(
-    `Anxiety − Control` = anxiety - control,
-    `Hope − Control` = hope - control,
+    `Anxiety - Control` = anxiety - control,
+    `Hope - Control` = hope - control,
     `Anxiety - Hope` = anxiety - hope
   ) |>
   pivot_longer(
-    cols = c(`Anxiety − Control`, `Hope − Control`, `Anxiety - Hope`),
+    cols = c(`Anxiety - Control`, `Hope - Control`, `Anxiety - Hope`),
     names_to = "contrast",
     values_to = "estimate"
   ) |>
@@ -1216,10 +1405,37 @@ rq2.1.3.contrasts <- rq2.1.3.draws |>
   ) |>
   select(-gender)
 
-rq2.1_posterior_data <- bind_rows(rq2.1.1.contrasts, rq2.1.2.contrasts, rq2.1.3.contrasts) |>
+# cATE by living standard
+rq2.1.8.draws <- expand.grid(
+  exp_condition = c("control", "anxiety", "hope"),
+  living_standard = levels(rq2.1.8$data$living_standard)
+) |>
+  add_epred_draws(rq2.1.8, re_formula = NA) |>
+  ungroup()
+
+rq2.1.8.contrasts <- rq2.1.8.draws |>
+  select(exp_condition, living_standard, .draw, .epred) |>
+  pivot_wider(names_from = exp_condition, values_from = .epred) |>
   mutate(
-    contrast = factor(contrast, levels = c("Anxiety - Hope", "Anxiety − Control", "Hope − Control")),
-    model = factor(model, levels = c("ATE", "Age", "Gender"))
+    `Anxiety - Control` = anxiety - control,
+    `Hope - Control` = hope - control,
+    `Anxiety - Hope` = anxiety - hope
+  ) |>
+  pivot_longer(
+    cols = c(`Anxiety - Control`, `Hope - Control`, `Anxiety - Hope`),
+    names_to = "contrast",
+    values_to = "estimate"
+  ) |>
+  mutate(
+    model = "Living Standard",
+    subgroup = as.character(living_standard)
+  ) |>
+  select(-living_standard)
+
+rq2.1_posterior_data <- bind_rows(rq2.1.1.contrasts, rq2.1.2.contrasts, rq2.1.3.contrasts, rq2.1.8.contrasts) |>
+  mutate(
+    contrast = factor(contrast, levels = c("Anxiety - Hope", "Anxiety - Control", "Hope - Control")),
+    model = factor(model, levels = c("ATE", "Age", "Gender", "Living Standard"))
   )
 
 # Compute whether HDI excludes zero for each group
@@ -1233,22 +1449,18 @@ rq2.1_hdi_check <- rq2.1_posterior_data |>
       subgroup == "22-26 years" ~ "22-26",
       TRUE ~ subgroup
     ),
-    subgroup = factor(subgroup, levels = c("ATE", "22-26", "16-21", "Women", "Men"))
+    subgroup = factor(subgroup, levels = c("ATE", "22-26", "16-21", "Women", "Men",
+                                           "Comfortable", "Coping", "Difficult"))
   ) |>
   group_by(model, contrast, subgroup) |>
-  median_hdi(estimate, .width = 0.95) |>
-  mutate(excludes_zero = if_else(sign(.lower) == sign(.upper), "Excludes zero", "Includes zero")) |>
-  select(model, contrast, subgroup, excludes_zero)
+  summarise(excludes_zero = hdi_excludes_zero(estimate), .groups = "drop")
 ```
 
 #### RQ2.1 Figure
 
 ```{r}
-#| fig-height: 5.5
+#| fig-height: 7
 #| fig-width: 8
-#| fig-dpi: 600
-#| fig-showtext: TRUE
-showtext_opts(dpi = 600)
 
 rq2.1_posterior_data |>
   mutate(
@@ -1260,7 +1472,8 @@ rq2.1_posterior_data |>
       subgroup == "22-26 years" ~ "22-26",
       TRUE ~ subgroup
     ),
-    subgroup = factor(subgroup, levels = c("ATE", "22-26", "16-21", "Women", "Men"))
+    subgroup = factor(subgroup, levels = c("ATE", "22-26", "16-21", "Women", "Men",
+                                           "Comfortable", "Coping", "Difficult"))
   ) |>
   left_join(rq2.1_hdi_check, by = c("model", "contrast", "subgroup")) |>
   ggplot(aes(x = estimate, y = subgroup, fill = excludes_zero)) +
@@ -1280,27 +1493,21 @@ rq2.1_posterior_data |>
     values = c("Excludes zero" = "#364B9A", "Includes zero" = "#4A7BB7"),
     name = "95% HDI",
   ) +
-  # scale_color_manual(
-  #   values = c("Excludes zero" = "#364B9A", "Includes zero" = "#4A7BB7"),
-  #   name = "95% HDI",
-  # ) +
-  scale_x_continuous(limits = c(-10, 10), breaks = seq(-10, 10, by = 5), expand = expansion(add = 2.5)) +
+  scale_x_continuous(breaks = seq(-10, 10, by = 5), expand = expansion(add = 2.5)) +
+  coord_cartesian(xlim = c(-10, 10)) +
   labs(
     x = "Percentage Points",
     y = NULL,
     title = "Effects on Political Participation",
     subtitle = "Posterior Distributions with Median and 95% HDI"
   ) +
-  theme_nice() +
+  theme_allround() +
   theme(
     legend.position = "bottom",
     panel.grid.major.x = element_line(color = "grey90", linewidth = 0.2)
   ) 
 
-ggsave(here(figure_dir, "RQ2", "RQ2.1_figure.png"),
-       height = 5.5,
-       width = 8,
-       dpi = 600)
+ggsave(here(figure_dir, "RQ2", "RQ2.1_figure.svg"), height = 7, width = 8, web_fonts = falo_svg_fonts())
 ```
 
 #### RQ2.1 Item-Level Differences Figure
@@ -1337,7 +1544,7 @@ df_polpart_items <- df |>
 rq2.1.7.draws <- expand.grid(
   exp_condition = c("control", "anxiety", "hope"),
   item = levels(df_polpart_items$item)) |>
-  add_epred_draws(rq2.1.7, re_formula = NA, ndraws = 4000) |>
+  add_epred_draws(rq2.1.7, re_formula = NA) |>
   ungroup()
 
 # Compute item-level pairwise contrasts 
@@ -1345,12 +1552,12 @@ rq2.1.7.item_contrasts <- rq2.1.7.draws |>
   select(exp_condition, item, .draw, .epred) |>
   pivot_wider(names_from = exp_condition, values_from = .epred) |>
   mutate(
-    `Anxiety − Control` = anxiety - control,
-    `Hope − Control` = hope - control,
+    `Anxiety - Control` = anxiety - control,
+    `Hope - Control` = hope - control,
     `Anxiety - Hope` = anxiety - hope
   ) |>
   pivot_longer(
-    cols = c(`Anxiety − Control`, `Hope − Control`, `Anxiety - Hope`),
+    cols = c(`Anxiety - Control`, `Hope - Control`, `Anxiety - Hope`),
     names_to = "contrast",
     values_to = "estimate"
   ) |>
@@ -1369,24 +1576,19 @@ rq2.1.7.avg_contrasts <- rq2.1.7.item_contrasts |>
 rq2.1.7.contrasts <- bind_rows(rq2.1.7.item_contrasts, rq2.1.7.avg_contrasts) |>
   mutate(
     item = factor(item, levels = c(levels(df_polpart_items$item), "Overall ATE")),
-    contrast = factor(contrast, levels = c("Anxiety - Hope", "Anxiety − Control", "Hope − Control"))
+    contrast = factor(contrast, levels = c("Anxiety - Hope", "Anxiety - Control", "Hope - Control"))
   )
 
 # Compute whether HDI excludes zero for each item
 rq2.1.7.hdi_check <- rq2.1.7.contrasts |>
   mutate(estimate = estimate * 100) |>
   group_by(item, contrast) |>
-  median_hdi(estimate, .width = 0.95) |>
-  mutate(excludes_zero = if_else(sign(.lower) == sign(.upper), "Excludes zero", "Includes zero")) |>
-  select(item, contrast, excludes_zero)
+  summarise(excludes_zero = hdi_excludes_zero(estimate), .groups = "drop")
 ```
 
 ```{r}
 #| fig-height: 5
 #| fig-width: 10
-#| fig-dpi: 600
-#| fig-showtext: TRUE
-showtext_opts(dpi = 600)
 rq2.1.7.contrasts |>
   mutate(estimate = estimate * 100) |>
   left_join(rq2.1.7.hdi_check, by = c("item", "contrast")) |>
@@ -1407,27 +1609,21 @@ rq2.1.7.contrasts |>
     name = "95% HDI",
     values = c("Excludes zero" = "#364B9A", "Includes zero" = "#4A7BB7"),
   ) +
-  # scale_color_manual(
-  #   name = "95% HDI",
-  #   values = c("Excludes zero" = "#364B9A", "Includes zero" = "#4A7BB7"),
-  # ) +
-  scale_x_continuous(limits = c(-15, 15), breaks = seq(-10, 10, by = 5), expand = expansion(add = 2.5)) +
+  scale_x_continuous(breaks = seq(-10, 10, by = 5), expand = expansion(add = 2.5)) +
+  coord_cartesian(xlim = c(-15, 15)) +
   labs(
     x = "Percentage Points",
     y = NULL,
     title = "Treatment Effects on Political Participation",
     subtitle = "Posterior Distributions with Median and 95% HDI"
   ) +
-  theme_nice() +
+  theme_allround() +
   theme(
     panel.grid.major.x = element_line(color = "grey90", linewidth = 0.2),
     legend.position = "bottom"
   )
 
-ggsave(here(figure_dir, "RQ2", "RQ2.1_item_figure.png"),
-       height = 5,
-       width = 10,
-       dpi = 600)
+ggsave(here(figure_dir, "RQ2", "RQ2.1_item_figure.svg"), height = 5, width = 10, web_fonts = falo_svg_fonts())
 ```
 
 ## RQ 2.2
@@ -1437,6 +1633,7 @@ rq2.2.1 <- readRDS(here(model_dir, "RQ2", "hu1.rds"))
 rq2.2.2 <- readRDS(here(model_dir, "RQ2", "hu2.rds"))
 rq2.2.3 <- readRDS(here(model_dir, "RQ2", "hu3.rds"))
 rq2.2.5 <- readRDS(here(model_dir, "RQ2", "hu5.rds"))
+rq2.2.8 <- readRDS(here(model_dir, "RQ2", "hu8.rds"))
 ```
 
 ### Tables
@@ -1453,7 +1650,10 @@ rq2.2.2_brms <- broom.mixed::tidy(rq2.2.2, parameters = "b", robust = TRUE, conf
 rq2.2.3_brms <- broom.mixed::tidy(rq2.2.3, parameters = "b", robust = TRUE, conf.method = "HPDinterval", rhat = TRUE, ess = TRUE) |>
   mutate(Model = "Gender")
 
-rq2.2_brms <- bind_rows(rq2.2.1_brms, rq2.2.2_brms, rq2.2.3_brms) |>
+rq2.2.8_brms <- broom.mixed::tidy(rq2.2.8, parameters = "b", robust = TRUE, conf.method = "HPDinterval", rhat = TRUE, ess = TRUE) |>
+  mutate(Model = "Living Standard")
+
+rq2.2_brms <- bind_rows(rq2.2.1_brms, rq2.2.2_brms, rq2.2.3_brms, rq2.2.8_brms) |>
   filter(!term %in% c("prior_b", "prior_b_hu")) |>
   mutate(
     Parameter = if_else(str_detect(term, "^b_hu_"), "hu", "mu"),
@@ -1473,6 +1673,12 @@ rq2.2_brms <- bind_rows(rq2.2.1_brms, rq2.2.2_brms, rq2.2.3_brms) |>
     term == "exp_conditionanxiety:genderfemale"          ~ "Women × Anxiety",
     term == "exp_conditionhope:genderother"              ~ "Other × Hope",
     term == "exp_conditionanxiety:genderother"           ~ "Other × Anxiety",
+    term == "living_standardCoping"                          ~ "Coping (vs. Difficult)",
+    term == "living_standardComfortable"                     ~ "Comfortable (vs. Difficult)",
+    term == "exp_conditionhope:living_standardCoping"        ~ "Coping × Hope",
+    term == "exp_conditionanxiety:living_standardCoping"     ~ "Coping × Anxiety",
+    term == "exp_conditionhope:living_standardComfortable"   ~ "Comfortable × Hope",
+    term == "exp_conditionanxiety:living_standardComfortable" ~ "Comfortable × Anxiety",
     TRUE ~ term
   )) |>
   select(Parameter, Term = term, Median = estimate, MAD = std.error,
@@ -1481,6 +1687,7 @@ rq2.2_brms <- bind_rows(rq2.2.1_brms, rq2.2.2_brms, rq2.2.3_brms) |>
 
 n1 <- rq2.2_brms |> filter(Model == "Overall") |> nrow()
 n2 <- rq2.2_brms |> filter(Model == "Age Group") |> nrow()
+n3 <- rq2.2_brms |> filter(Model == "Gender") |> nrow()
 ```
 
 ```{r}
@@ -1491,7 +1698,8 @@ rq2.2_brms_table <- rq2.2_brms |>
   group_tt(i = list(
     "Main Model" = 1,
     "Interaction with Age Group" = n1 + 1,
-    "Interaction with Gender" = n1 + n2 + 1
+    "Interaction with Gender" = n1 + n2 + 1,
+    "Interaction with Living Standard" = n1 + n2 + n3 + 1
   ))
 
 rq2.2_brms_table
@@ -1499,19 +1707,22 @@ rq2.2_brms_table |>
   save_tt(here(table_dir, "RQ2", "rq2.2_brms_table.docx"), overwrite = TRUE)
 ```
 
-#### RQ2.2 Comparison Table
+#### RQ2.2 Comparisons Table
 
 ```{r}
 rq2.2.1_hu_comp_raw <- avg_comparisons(rq2.2.1, dpar = "hu", variables = list(exp_condition = "pairwise"))
 rq2.2.2_hu_comp_raw <- avg_comparisons(rq2.2.2, dpar = "hu", variables = list(exp_condition = "pairwise"), by = "age_group")
 rq2.2.3_hu_comp_raw <- avg_comparisons(rq2.2.3, dpar = "hu", variables = list(exp_condition = "pairwise"), by = "gender")
+rq2.2.8_hu_comp_raw <- avg_comparisons(rq2.2.8, dpar = "hu", variables = list(exp_condition = "pairwise"), by = "living_standard")
 
 rq2.2.1_mu_comp_raw <- avg_comparisons(rq2.2.1, dpar = "mu", variables = list(exp_condition = "pairwise"), 
                                        comparison = function(hi, lo) exp(hi) - exp(lo))
 rq2.2.2_mu_comp_raw <- avg_comparisons(rq2.2.2, dpar = "mu", variables = list(exp_condition = "pairwise"), by = "age_group", 
                                        comparison = function(hi, lo) exp(hi) - exp(lo))
 rq2.2.3_mu_comp_raw <- avg_comparisons(rq2.2.3, dpar = "mu", variables = list(exp_condition = "pairwise"), by = "gender", 
-                                       comparison = function(hi, lo) exp(hi) - exp(lo),)
+                                       comparison = function(hi, lo) exp(hi) - exp(lo))
+rq2.2.8_mu_comp_raw <- avg_comparisons(rq2.2.8, dpar = "mu", variables = list(exp_condition = "pairwise"), by = "living_standard", 
+                                       comparison = function(hi, lo) exp(hi) - exp(lo))
 
 rq2.2.1_hu_comp <- rq2.2.1_hu_comp_raw |>
   as_tibble() |>
@@ -1547,7 +1758,20 @@ rq2.2.3_mu_comp <- rq2.2.3_mu_comp_raw |>
   mutate(Model = "Gender", Parameter = "mu") |>
   rename(Group = gender)
 
-rq2.2_comp <- bind_rows(rq2.2.1_hu_comp, rq2.2.1_mu_comp, rq2.2.2_hu_comp, rq2.2.2_mu_comp, rq2.2.3_hu_comp, rq2.2.3_mu_comp) |>
+rq2.2.8_hu_comp <- rq2.2.8_hu_comp_raw |>
+  as_tibble() |>
+  left_join(probability_direction(rq2.2.8_hu_comp_raw, by = "living_standard"), by = c("contrast", "living_standard")) |>
+  mutate(Model = "Living Standard", Parameter = "hu") |> 
+  rename(Group = living_standard) 
+
+rq2.2.8_mu_comp <- rq2.2.8_mu_comp_raw |>
+  as_tibble() |>
+  left_join(probability_direction(rq2.2.8_mu_comp_raw, by = "living_standard"), by = c("contrast", "living_standard")) |>
+  mutate(Model = "Living Standard", Parameter = "mu") |>
+  rename(Group = living_standard)
+
+rq2.2_comp <- bind_rows(rq2.2.1_hu_comp, rq2.2.1_mu_comp, rq2.2.2_hu_comp, rq2.2.2_mu_comp, rq2.2.3_hu_comp, rq2.2.3_mu_comp,
+                        rq2.2.8_hu_comp, rq2.2.8_mu_comp) |>
   mutate(
     Contrast = case_when(
       contrast == "anxiety, control" ~ "Anxiety - Control",
@@ -1567,6 +1791,10 @@ rq2.2_comp <- bind_rows(rq2.2.1_hu_comp, rq2.2.1_mu_comp, rq2.2.2_hu_comp, rq2.2
          "95% HDI Lower" = conf.low,
          "95% HDI Upper" = conf.high,
          "Probability of Direction" = pd)
+
+n1 <- rq2.2_comp |> filter(Model == "Overall") |> nrow()
+n2 <- rq2.2_comp |> filter(Model == "Age Group") |> nrow()
+n3 <- rq2.2_comp |> filter(Model == "Gender") |> nrow()
 ```
 
 ```{r}
@@ -1574,7 +1802,12 @@ rq2.2_comp_table <- rq2.2_comp |>
   mutate(across(where(is.numeric), ~round(.x, 3))) |> 
   select(-Model) |> 
   tt() |> 
-  group_tt(i = list("Main Model" = 1, "By Age Group" = 7, "By Gender" = 19)) 
+  group_tt(i = list(
+    "Main Model" = 1,
+    "By Age Group" = n1 + 1,
+    "By Gender" = n1 + n2 + 1,
+    "By Living Standard" = n1 + n2 + n3 + 1
+  ))
 
 rq2.2_comp_table
 
@@ -1613,7 +1846,7 @@ rq2.2.5_brms_table |>
   save_tt(here(table_dir, "RQ2", "prereg_RQ2.2.5_brms_table.docx"), overwrite = TRUE)
 ```
 
-### Figures 
+### Figures
 
 #### Figure Data
 
@@ -1631,11 +1864,11 @@ rq2.2.1.hu_comparisons <- avg_comparisons(
 rq2.2.1.hu_contrasts <- rq2.2.1.hu_comparisons |>
   mutate(
     contrast = case_when(
-      contrast == "anxiety - control" ~ "Anxiety − Control",
-      contrast == "hope - control" ~ "Hope − Control",
+      contrast == "anxiety - control" ~ "Anxiety - Control",
+      contrast == "hope - control" ~ "Hope - Control",
       contrast == "anxiety - hope" ~ "Anxiety - Hope"
     ),
-    contrast = factor(contrast, levels = c("Anxiety - Hope", "Anxiety − Control", "Hope − Control")),
+    contrast = factor(contrast, levels = c("Anxiety - Hope", "Anxiety - Control", "Hope - Control")),
     model = "ATE",
     subgroup = "ATE",
     estimate = draw
@@ -1656,11 +1889,11 @@ rq2.2.1.mu_comparisons <- avg_comparisons(
 rq2.2.1.mu_contrasts <- rq2.2.1.mu_comparisons |>
   mutate(
     contrast = case_when(
-      contrast == "anxiety, control" ~ "Anxiety − Control",
-      contrast == "hope, control" ~ "Hope − Control",
+      contrast == "anxiety, control" ~ "Anxiety - Control",
+      contrast == "hope, control" ~ "Hope - Control",
       contrast == "anxiety, hope" ~ "Anxiety - Hope"
     ),
-    contrast = factor(contrast, levels = c("Anxiety - Hope", "Anxiety − Control", "Hope − Control")),
+    contrast = factor(contrast, levels = c("Anxiety - Hope", "Anxiety - Control", "Hope - Control")),
     model = "ATE",
     subgroup = "ATE",
     estimate = draw
@@ -1683,11 +1916,11 @@ rq2.2.2.hu_comparisons <- avg_comparisons(
 rq2.2.2.hu_contrasts <- rq2.2.2.hu_comparisons |>
   mutate(
     contrast = case_when(
-      contrast == "anxiety - control" ~ "Anxiety − Control",
-      contrast == "hope - control" ~ "Hope − Control",
+      contrast == "anxiety - control" ~ "Anxiety - Control",
+      contrast == "hope - control" ~ "Hope - Control",
       contrast == "anxiety - hope" ~ "Anxiety - Hope"
     ),
-    contrast = factor(contrast, levels = c("Anxiety - Hope", "Anxiety − Control", "Hope − Control")),
+    contrast = factor(contrast, levels = c("Anxiety - Hope", "Anxiety - Control", "Hope - Control")),
     model = "Age",
     subgroup = as.character(age_group),
     estimate = draw
@@ -1709,11 +1942,11 @@ rq2.2.2.mu_comparisons <- avg_comparisons(
 rq2.2.2.mu_contrasts <- rq2.2.2.mu_comparisons |>
   mutate(
     contrast = case_when(
-      contrast == "anxiety, control" ~ "Anxiety − Control",
-      contrast == "hope, control" ~ "Hope − Control",
+      contrast == "anxiety, control" ~ "Anxiety - Control",
+      contrast == "hope, control" ~ "Hope - Control",
       contrast == "anxiety, hope" ~ "Anxiety - Hope"
     ),
-    contrast = factor(contrast, levels = c("Anxiety - Hope", "Anxiety − Control", "Hope − Control")),
+    contrast = factor(contrast, levels = c("Anxiety - Hope", "Anxiety - Control", "Hope - Control")),
     model = "Age",
     subgroup = as.character(age_group),
     estimate = draw
@@ -1736,11 +1969,11 @@ rq2.2.3.hu_comparisons <- avg_comparisons(
 rq2.2.3.hu_contrasts <- rq2.2.3.hu_comparisons |>
   mutate(
     contrast = case_when(
-      contrast == "anxiety - control" ~ "Anxiety − Control",
-      contrast == "hope - control" ~ "Hope − Control",
+      contrast == "anxiety - control" ~ "Anxiety - Control",
+      contrast == "hope - control" ~ "Hope - Control",
       contrast == "anxiety - hope" ~ "Anxiety - Hope"
     ),
-    contrast = factor(contrast, levels = c("Anxiety - Hope", "Anxiety − Control", "Hope − Control")),
+    contrast = factor(contrast, levels = c("Anxiety - Hope", "Anxiety - Control", "Hope - Control")),
     model = "Gender",
     subgroup = as.character(gender),
     estimate = draw
@@ -1762,13 +1995,66 @@ rq2.2.3.mu_comparisons <- avg_comparisons(
 rq2.2.3.mu_contrasts <- rq2.2.3.mu_comparisons |>
   mutate(
     contrast = case_when(
-      contrast == "anxiety, control" ~ "Anxiety − Control",
-      contrast == "hope, control" ~ "Hope − Control",
+      contrast == "anxiety, control" ~ "Anxiety - Control",
+      contrast == "hope, control" ~ "Hope - Control",
       contrast == "anxiety, hope" ~ "Anxiety - Hope"
     ),
-    contrast = factor(contrast, levels = c("Anxiety - Hope", "Anxiety − Control", "Hope − Control")),
+    contrast = factor(contrast, levels = c("Anxiety - Hope", "Anxiety - Control", "Hope - Control")),
     model = "Gender",
     subgroup = as.character(gender),
+    estimate = draw
+  ) |>
+  select(drawid, contrast, estimate, model, subgroup)
+```
+
+```{r}
+# Comparisons for hu (decision NOT to view) by living standard
+rq2.2.8.hu_comparisons <- avg_comparisons(
+  rq2.2.8,
+  variables = list(exp_condition = "pairwise"),
+  by = "living_standard",
+  dpar = "hu",
+  re_formula = NA
+) |>
+  posterior_draws()
+
+# Format hu comparisons
+rq2.2.8.hu_contrasts <- rq2.2.8.hu_comparisons |>
+  mutate(
+    contrast = case_when(
+      contrast == "anxiety - control" ~ "Anxiety - Control",
+      contrast == "hope - control" ~ "Hope - Control",
+      contrast == "anxiety - hope" ~ "Anxiety - Hope"
+    ),
+    contrast = factor(contrast, levels = c("Anxiety - Hope", "Anxiety - Control", "Hope - Control")),
+    model = "Living Standard",
+    subgroup = as.character(living_standard),
+    estimate = draw
+  ) |>
+  select(drawid, contrast, estimate, model, subgroup)
+
+# Comparisons for mu (time spent viewing) by living standard
+rq2.2.8.mu_comparisons <- avg_comparisons(
+  rq2.2.8,
+  variables = list(exp_condition = "pairwise"),
+  by = "living_standard",
+  dpar = "mu",
+  comparison = function(hi, lo) exp(hi) - exp(lo),
+  re_formula = NA
+) |>
+  posterior_draws()
+
+# Format mu comparisons
+rq2.2.8.mu_contrasts <- rq2.2.8.mu_comparisons |>
+  mutate(
+    contrast = case_when(
+      contrast == "anxiety, control" ~ "Anxiety - Control",
+      contrast == "hope, control" ~ "Hope - Control",
+      contrast == "anxiety, hope" ~ "Anxiety - Hope"
+    ),
+    contrast = factor(contrast, levels = c("Anxiety - Hope", "Anxiety - Control", "Hope - Control")),
+    model = "Living Standard",
+    subgroup = as.character(living_standard),
     estimate = draw
   ) |>
   select(drawid, contrast, estimate, model, subgroup)
@@ -1779,7 +2065,8 @@ rq2.2.3.mu_contrasts <- rq2.2.3.mu_comparisons |>
 rq2.2_hu_posterior_data <- bind_rows(
   rq2.2.1.hu_contrasts,
   rq2.2.2.hu_contrasts,
-  rq2.2.3.hu_contrasts
+  rq2.2.3.hu_contrasts,
+  rq2.2.8.hu_contrasts
 ) |>
   mutate(parameter = "hu")
 
@@ -1787,7 +2074,8 @@ rq2.2_hu_posterior_data <- bind_rows(
 rq2.2_mu_posterior_data <- bind_rows(
   rq2.2.1.mu_contrasts,
   rq2.2.2.mu_contrasts,
-  rq2.2.3.mu_contrasts
+  rq2.2.3.mu_contrasts,
+  rq2.2.8.mu_contrasts
 ) |>
   mutate(parameter = "mu")
 
@@ -1806,16 +2094,15 @@ rq2.2_posterior_data <- bind_rows(
       TRUE ~ subgroup
     ),
     # Set factor levels
-    model = factor(model, levels = c("ATE", "Age", "Gender")),
-    subgroup = factor(subgroup, levels = c("ATE", "22-26", "16-21", "Women", "Men"))
+    model = factor(model, levels = c("ATE", "Age", "Gender", "Living Standard")),
+    subgroup = factor(subgroup, levels = c("ATE", "22-26", "16-21", "Women", "Men",
+                                           "Comfortable", "Coping", "Difficult"))
   )
 
 # Compute whether HDI excludes zero for each parameter separately
 rq2.2_hurdle_check <- rq2.2_posterior_data |>
   group_by(parameter, model, contrast, subgroup) |>
-  median_hdi(estimate, .width = 0.95) |>
-  mutate(excludes_zero = if_else(sign(.lower) == sign(.upper), "Excludes zero", "Includes zero")) |>
-  select(parameter, model, contrast, subgroup, excludes_zero)
+  summarise(excludes_zero = hdi_excludes_zero(estimate), .groups = "drop")
 ```
 
 #### RQ2.2 Figure
@@ -1823,11 +2110,8 @@ rq2.2_hurdle_check <- rq2.2_posterior_data |>
 ##### Decision to View
 
 ```{r}
-#| fig-height: 5.5
+#| fig-height: 7
 #| fig-width: 9.5
-#| fig-dpi: 600
-#| fig-showtext: TRUE
-showtext_opts(dpi = 600)
 
 rq2.2_posterior_data |>
   filter(subgroup != "Other") |> 
@@ -1854,37 +2138,28 @@ rq2.2_posterior_data |>
     values = c("Excludes zero" = "#364B9A", "Includes zero" = "#4A7BB7"),
     name = "95% HDI",
   ) +
-  # scale_color_manual(
-  #   values = c("Excludes zero" = "#364B9A", "Includes zero" = "#4A7BB7"),
-  #   name = "95% HDI",
-  # ) +
-  scale_x_continuous(limits = c(-25, 25), breaks = seq(-15, 15, by = 5), expand = expansion(add = 0.5)) +
+  scale_x_continuous(breaks = seq(-15, 15, by = 5), expand = expansion(add = 0.5)) +
+  coord_cartesian(xlim = c(-25, 25)) +
   labs(
     x = "Percentage Points",
     y = NULL,
     title = "Effects on Initiation of Political Information Seeking",
     subtitle = "Posterior Distributions with Median and 95% HDI"
   ) +
-  theme_nice() +
+  theme_allround() +
   theme(
     panel.grid.major.x = element_line(color = "grey90", linewidth = 0.2),
     legend.position = "bottom"
   )
 
-ggsave(here(figure_dir, "RQ2", "RQ2.2_hu_ate_cate.png"),
-       height = 5.5,
-       width = 9.5,
-       dpi = 600)
+ggsave(here(figure_dir, "RQ2", "RQ2.2_hu_ate_cate.svg"), height = 7, width = 9.5, web_fonts = falo_svg_fonts())
 ```
 
 ##### Time Spent Viewing
 
 ```{r}
-#| fig-height: 5.5
+#| fig-height: 7
 #| fig-width: 9.5
-#| fig-dpi: 600
-#| fig-showtext: TRUE
-showtext_opts(dpi = 600)
 
 rq2.2_posterior_data |>
   filter(subgroup != "Other") |> 
@@ -1910,36 +2185,263 @@ rq2.2_posterior_data |>
     values = c("Excludes zero" = "#364B9A", "Includes zero" = "#4A7BB7"),
     name = "95% HDI",
   ) +
-  # scale_color_manual(
-  #   values = c("Excludes zero" = "#364B9A", "Includes zero" = "#4A7BB7"),
-  #   name = "95% HDI",
-  # ) +
-  scale_x_continuous(limits = c(-8, 8), breaks = seq(-5, 5, by = 2.5), expand = expansion(add = 0.5)) +
+  scale_x_continuous(breaks = seq(-5, 5, by = 2.5), expand = expansion(add = 0.5)) +
+  coord_cartesian(xlim = c(-8, 8)) +
   labs(
     x = "Seconds",
     y = NULL,
     title = "Effects on Extent of Political Information Seeking",
     subtitle = "Posterior Distributions with Median and 95% HDI"
   ) +
-  theme_nice() +
+  theme_allround() +
   theme(
     panel.grid.major.x = element_line(color = "grey90", linewidth = 0.2),
     legend.position = "bottom"
   )
-ggsave(here(figure_dir, "RQ2", "RQ2.2_mu_ate_cate.png"),
-       height = 5.5,
-       width = 9.5,
-       dpi = 600)
+ggsave(here(figure_dir, "RQ2", "RQ2.2_mu_ate_cate.svg"), height = 7, width = 9.5, web_fonts = falo_svg_fonts())
+```
+
+## Robustness: Age as a Continuous Variable
+
+```{r}
+rq1.1.9 <- readRDS(here(model_dir, "RQ1", "m9.rds"))
+rq1.2.9 <- readRDS(here(model_dir, "RQ1", "cj9.rds"))
+rq2.1.9 <- readRDS(here(model_dir, "RQ2", "m9.rds"))
+rq2.2.9 <- readRDS(here(model_dir, "RQ2", "hu9.rds"))
+
+age_note <- paste0("Age was standardised (M = ", sprintf("%.1f", mean(df$age)), ", SD = ", sprintf("%.1f", sd(df$age)),
+                   " years), so coefficients involving age are per standard deviation of age.")
+```
+
+### Continuous Age: Democratic Support and Democratic Candidate Choice Table
+
+```{r}
+age_c_rq1.1_brms <- tidy(rq1.1.9, robust = TRUE, conf.method = "HPDinterval", rhat = TRUE, ess = TRUE) |>
+  filter(effect == "fixed") |>
+  mutate(Outcome = "Democratic Support")
+
+age_c_rq1.2_brms <- bind_rows(
+  tidy(rq1.2.9, parameters = "b",    robust = TRUE, conf.method = "HPDinterval", rhat = TRUE, ess = TRUE),
+  tidy(rq1.2.9, parameters = "^sd_", robust = TRUE, conf.method = "HPDinterval", rhat = TRUE, ess = TRUE)
+) |>
+  filter(!term %in% conjoint_controls) |>
+  mutate(term = str_remove(term, "^b_"),
+         Outcome = "Democratic Candidate Choice")
+
+age_c_rq1_brms <- bind_rows(age_c_rq1.1_brms, age_c_rq1.2_brms) |>
+  mutate(term = case_when(
+    term %in% c("(Intercept)", "Intercept")                                 ~ "Intercept",
+    term == "exp_conditionhope"                                             ~ "Hope (vs. Control)",
+    term == "exp_conditionanxiety"                                          ~ "Anxiety (vs. Control)",
+    term %in% c("age_z", "participant_age_z")                               ~ "Age (z)",
+    term %in% c("exp_conditionhope:age_z", "exp_conditionhope:participant_age_z")       ~ "Age × Hope",
+    term %in% c("exp_conditionanxiety:age_z", "exp_conditionanxiety:participant_age_z") ~ "Age × Anxiety",
+    term == "conjoint_demDemocratic"                                        ~ "Democratic (vs. Undemocratic)",
+    term == "conjoint_demDemocratic:exp_conditionhope"                      ~ "Democratic × Hope",
+    term == "conjoint_demDemocratic:exp_conditionanxiety"                   ~ "Democratic × Anxiety",
+    term == "conjoint_demDemocratic:participant_age_z"                      ~ "Democratic × Age",
+    term == "conjoint_demDemocratic:exp_conditionhope:participant_age_z"    ~ "Democratic × Hope × Age",
+    term == "conjoint_demDemocratic:exp_conditionanxiety:participant_age_z" ~ "Democratic × Anxiety × Age",
+    term == "sd_id__(Intercept)"                                            ~ "SD(Intercept)",
+    TRUE ~ term
+  )) |>
+  select(Term = term, Median = estimate, MAD = std.error,
+         "95% HDI Lower" = conf.low, "95% HDI Upper" = conf.high,
+         "R-hat" = rhat, ESS = ess, Outcome)
+
+n1 <- age_c_rq1_brms |> filter(Outcome == "Democratic Support") |> nrow()
+```
+
+```{r}
+age_c_rq1_brms_table <- age_c_rq1_brms |>
+  mutate(across(where(is.numeric), ~round(.x, 3))) |>
+  select(-Outcome) |>
+  tt(notes = paste("Note.", age_note,
+                   "The democratic candidate choice model controls for conjoint attributes: candidate sex, age, political party, and economic reputation.")) |>
+  group_tt(i = list("Democratic Support" = 1, "Democratic Candidate Choice" = n1 + 1))
+
+age_c_rq1_brms_table
+age_c_rq1_brms_table |>
+  save_tt(here(table_dir, "RQ1", "age_continuous_RQ1_brms_table.docx"), overwrite = TRUE)
+```
+
+### Continuous Age: Political Participation and Interest in Democratic Involvement Table
+
+```{r}
+age_c_rq2.1_brms <- tidy(rq2.1.9, robust = TRUE, conf.method = "HPDinterval", rhat = TRUE, ess = TRUE) |>
+  filter(effect == "fixed") |>
+  mutate(Outcome = "Political Participation", Parameter = "")
+
+age_c_rq2.2_brms <- broom.mixed::tidy(rq2.2.9, parameters = "b", robust = TRUE, conf.method = "HPDinterval", rhat = TRUE, ess = TRUE) |>
+  filter(!term %in% c("prior_b", "prior_b_hu")) |>
+  mutate(
+    Parameter = if_else(str_detect(term, "^b_hu_"), "hu", "mu"),
+    term = str_remove(term, "^b_hu_"),
+    term = str_remove(term, "^b_"),
+    Outcome = "Interest in Democratic Involvement"
+  )
+
+age_c_rq2_brms <- bind_rows(age_c_rq2.1_brms, age_c_rq2.2_brms) |>
+  mutate(term = case_when(
+    term %in% c("(Intercept)", "Intercept") ~ "Intercept",
+    term == "exp_conditionhope"             ~ "Hope (vs. Control)",
+    term == "exp_conditionanxiety"          ~ "Anxiety (vs. Control)",
+    term == "age_z"                         ~ "Age (z)",
+    term == "exp_conditionhope:age_z"       ~ "Age × Hope",
+    term == "exp_conditionanxiety:age_z"    ~ "Age × Anxiety",
+    TRUE ~ term
+  )) |>
+  select(Parameter, Term = term, Median = estimate, MAD = std.error,
+         "95% HDI Lower" = conf.low, "95% HDI Upper" = conf.high,
+         "R-hat" = rhat, ESS = ess, Outcome)
+
+n1 <- age_c_rq2_brms |> filter(Outcome == "Political Participation") |> nrow()
+```
+
+```{r}
+age_c_rq2_brms_table <- age_c_rq2_brms |>
+  mutate(across(where(is.numeric), ~round(.x, 3))) |>
+  select(-Outcome) |>
+  tt(notes = paste("Note.", age_note,
+                   "mu = log-normal component (time spent viewing); hu = hurdle component (probability of not viewing).")) |>
+  group_tt(i = list("Political Participation" = 1, "Interest in Democratic Involvement" = n1 + 1))
+
+age_c_rq2_brms_table
+age_c_rq2_brms_table |>
+  save_tt(here(table_dir, "RQ2", "age_continuous_RQ2_brms_table.docx"), overwrite = TRUE)
+```
+
+## Anxiety–Hope Dimension by Subgroup
+
+```{r}
+ah1 <- readRDS(here(model_dir, "exploratory", "ah1.rds"))
+ah2 <- readRDS(here(model_dir, "exploratory", "ah2.rds"))
+ah3 <- readRDS(here(model_dir, "exploratory", "ah3.rds"))
+ah4 <- readRDS(here(model_dir, "exploratory", "ah4.rds"))
+ah5 <- readRDS(here(model_dir, "exploratory", "ah5.rds"))
+```
+
+### Anxiety–Hope Dimension Table
+
+```{r}
+# Treatment effects overall and within each subgroup
+ah1_comp_raw <- avg_comparisons(ah1, variables = list(exp_condition = "pairwise"))
+ah2_comp_raw <- avg_comparisons(ah2, variables = list(exp_condition = "pairwise"), by = "age_group")
+ah3_comp_raw <- avg_comparisons(ah3, variables = list(exp_condition = "pairwise"), by = "gender")
+ah4_comp_raw <- avg_comparisons(ah4, variables = list(exp_condition = "pairwise"), by = "living_standard")
+
+# Differences in treatment effects between subgroups (interactions)
+ah2_diff_raw <- avg_comparisons(ah2, variables = list(exp_condition = "pairwise"), by = "age_group",
+                                hypothesis = difference ~ pairwise | contrast)
+ah3_diff_raw <- avg_comparisons(ah3, variables = list(exp_condition = "pairwise"), by = "gender",
+                                hypothesis = difference ~ pairwise | contrast)
+ah4_diff_raw <- avg_comparisons(ah4, variables = list(exp_condition = "pairwise"), by = "living_standard",
+                                hypothesis = difference ~ pairwise | contrast)
+ah5_diff_raw <- avg_slopes(ah5, variables = "age_z", by = "exp_condition", hypothesis = ~ pairwise)
+
+# Associations of each moderator with the Anxiety–Hope dimension, averaged across conditions
+ah2_assoc_raw <- avg_comparisons(ah2, variables = list(age_group = "pairwise"),
+                                 newdata = datagrid(exp_condition = unique, age_group = unique))
+ah3_assoc_raw <- avg_comparisons(ah3, variables = list(gender = "pairwise"),
+                                 newdata = datagrid(exp_condition = unique, gender = unique))
+ah4_assoc_raw <- avg_comparisons(ah4, variables = list(living_standard = "pairwise"),
+                                 newdata = datagrid(exp_condition = unique, living_standard = unique))
+ah5_assoc_raw <- avg_slopes(ah5, variables = "age_z", newdata = datagrid(exp_condition = unique))
+
+ah_effects <- bind_rows(
+  ah1_comp_raw |> as_tibble() |>
+    left_join(probability_direction(ah1_comp_raw), by = "contrast") |>
+    mutate(Block = "Treatment Effects: Overall", Group = "Overall"),
+  ah2_comp_raw |> as_tibble() |>
+    left_join(probability_direction(ah2_comp_raw, by = "age_group"), by = c("contrast", "age_group")) |>
+    mutate(Block = "Treatment Effects by Age Group", Group = as.character(age_group)),
+  ah3_comp_raw |> as_tibble() |>
+    left_join(probability_direction(ah3_comp_raw, by = "gender"), by = c("contrast", "gender")) |>
+    mutate(Block = "Treatment Effects by Gender", Group = as.character(gender)),
+  ah4_comp_raw |> as_tibble() |>
+    left_join(probability_direction(ah4_comp_raw, by = "living_standard"), by = c("contrast", "living_standard")) |>
+    mutate(Block = "Treatment Effects by Living Standard", Group = as.character(living_standard))
+)
+
+ah_diffs <- bind_rows(
+  ah2_diff_raw |> as_tibble() |>
+    left_join(probability_direction(ah2_diff_raw, id = "contrast", by = "hypothesis"), by = c("contrast", "hypothesis")) |>
+    mutate(Block = "Differences in Treatment Effects: Age Group"),
+  ah3_diff_raw |> as_tibble() |>
+    left_join(probability_direction(ah3_diff_raw, id = "contrast", by = "hypothesis"), by = c("contrast", "hypothesis")) |>
+    mutate(Block = "Differences in Treatment Effects: Gender"),
+  ah4_diff_raw |> as_tibble() |>
+    left_join(probability_direction(ah4_diff_raw, id = "contrast", by = "hypothesis"), by = c("contrast", "hypothesis")) |>
+    mutate(Block = "Differences in Treatment Effects: Living Standard")
+) |>
+  mutate(Group = str_remove_all(hypothesis, "[()]"))
+
+# Continuous age: differences in age slopes between conditions, per SD of age
+ah_age_diffs <- ah5_diff_raw |> as_tibble() |>
+  left_join(probability_direction(ah5_diff_raw, id = "hypothesis"), by = "hypothesis") |>
+  mutate(contrast = str_remove_all(hypothesis, "[()]"),
+         Block = "Differences in Treatment Effects: Age (Continuous, per SD)",
+         Group = "Age")
+
+ah_assoc <- bind_rows(
+  ah2_assoc_raw |> as_tibble() |>
+    left_join(probability_direction(ah2_assoc_raw), by = "contrast") |>
+    mutate(Block = "Association with Age Group (Averaged Across Conditions)", Group = contrast),
+  ah3_assoc_raw |> as_tibble() |>
+    left_join(probability_direction(ah3_assoc_raw), by = "contrast") |>
+    # same order as the gender differences above
+    arrange(factor(contrast, levels = c("female - male", "other - male", "other - female"))) |>
+    mutate(Block = "Association with Gender (Averaged Across Conditions)", Group = contrast),
+  ah4_assoc_raw |> as_tibble() |>
+    left_join(probability_direction(ah4_assoc_raw), by = "contrast") |>
+    mutate(Block = "Association with Living Standard (Averaged Across Conditions)", Group = contrast),
+  ah5_assoc_raw |> as_tibble() |>
+    left_join(probability_direction(ah5_assoc_raw), by = "contrast") |>
+    mutate(Block = "Association with Age (Continuous, per SD; Averaged Across Conditions)", Group = "Age")
+) |>
+  mutate(contrast = "")
+
+ah_table_data <- bind_rows(ah_effects, ah_diffs, ah_age_diffs, ah_assoc) |>
+  mutate(
+    Contrast = case_when(
+      contrast == "anxiety - control" ~ "Anxiety - Control",
+      contrast == "anxiety - hope"    ~ "Anxiety - Hope",
+      contrast == "hope - control"    ~ "Hope - Control",
+      TRUE ~ contrast),
+    Group = Group |>
+      str_replace_all("female", "Women") |>
+      str_replace_all("\\bmale\\b", "Men") |>
+      str_replace_all("other", "Other")
+  ) |>
+  select(Block, Group, Contrast,
+         Median = estimate,
+         "95% HDI Lower" = conf.low,
+         "95% HDI Upper" = conf.high,
+         "Probability of Direction" = pd)
+
+# Row index at which each block starts
+ah_blocks <- rle(ah_table_data$Block)
+ah_block_starts <- setNames(as.list(cumsum(c(1, head(ah_blocks$lengths, -1)))), ah_blocks$values)
+```
+
+```{r}
+ah_table <- ah_table_data |>
+  mutate(across(where(is.numeric), ~round(.x, 3))) |>
+  select(-Block) |>
+  tt(notes = paste("Note. Anxiety–Hope dimension: 0 = maximum hopefulness, 1 = maximum anxiety.",
+                   "Differences in treatment effects correspond to the interaction terms of the respective models.",
+                   "Associations are differences between subgroups (age: change per SD), averaged across the three conditions.")) |>
+  group_tt(i = ah_block_starts)
+
+ah_table
+ah_table |>
+  save_tt(here(table_dir, "exploratory", "anxiety_hope_subgroup_table.docx"), overwrite = TRUE)
 ```
 
 ## Combined Figure
 
 ```{r}
-# Helper to standardise contrast labels and subgroup labels
-fix_contrasts <- function(x) {
-  x |> str_replace_all("\u2212", "-")  # replace em-dash minus with regular hyphen
-}
-
+# Helper to standardise subgroup labels
 fix_subgroups <- function(x) {
   case_when(
     x == "female"      ~ "Women",
@@ -1952,11 +2454,9 @@ fix_subgroups <- function(x) {
 
 # RQ1.1 — Democratic Support
 rq1.1_clean <- rq1.1_posterior_data |>
-  rename(.draw = .draw) |>          # already .draw, just for clarity
   mutate(
     outcome   = "Democratic Support",
     estimate  = estimate * 100,
-    contrast  = fix_contrasts(contrast),
     subgroup  = fix_subgroups(subgroup),
     parameter = NA_character_
   ) |>
@@ -1969,7 +2469,6 @@ rq1.2_clean <- rq1.2_posterior_data |>
     .draw     = as.integer(.draw),
     outcome   = "Democratic Candidate Choice",
     estimate  = estimate * 100,
-    contrast  = fix_contrasts(contrast),
     subgroup  = fix_subgroups(subgroup),
     parameter = NA_character_
   ) |>
@@ -1980,7 +2479,6 @@ rq2.1_clean <- rq2.1_posterior_data |>
   mutate(
     outcome   = "Political Participation",
     estimate  = estimate * 100,
-    contrast  = fix_contrasts(contrast),
     subgroup  = fix_subgroups(subgroup),
     parameter = NA_character_
   ) |>
@@ -1991,7 +2489,6 @@ rq2.2_clean <- rq2.2_posterior_data |>
   rename(.draw = drawid) |>
   mutate(
     .draw    = as.integer(.draw),
-    contrast = fix_contrasts(contrast),
     subgroup = fix_subgroups(subgroup),
     outcome  = case_when(
       parameter == "hu" ~ "Interest in Democratic Involvement",
@@ -2041,11 +2538,6 @@ combined_fig_data <- combined_fig_data |>
   ungroup()
 
 pd_data <- combined_fig_data |>
-  filter(
-    subgroup == "ATE",
-    model == "ATE",
-    outcome != "Information Seeking (Time)"
-  ) |>
   group_by(outcome, contrast) |>
   summarise(
     median_est = median(estimate),
@@ -2060,9 +2552,6 @@ pd_data <- combined_fig_data |>
 ```{r}
 #| fig-height: 6
 #| fig-width: 8
-#| fig-dpi: 600
-#| fig-showtext: TRUE
-showtext_opts(dpi = 600)
 
 ggplot(combined_fig_data, aes(x = estimate, y = contrast)) +
   geom_vline(xintercept = 0, linetype = "dashed", color = "gray40", linewidth = 0.6) +
@@ -2094,7 +2583,7 @@ ggplot(combined_fig_data, aes(x = estimate, y = contrast)) +
     vjust = -1,
     size = 4,
     color = "#364B9A",
-    family = "Public Sans",
+    family = "Public Sans Regular",
     inherit.aes = FALSE
   ) +
   scale_fill_manual(
@@ -2110,7 +2599,7 @@ ggplot(combined_fig_data, aes(x = estimate, y = contrast)) +
     expand = expansion(add = 1)
   ) +
   labs(x = "Percentage Points", y = NULL) +
-  theme_nice() +
+  theme_allround() +
   theme(panel.grid.major.x = element_line(color = "grey90", linewidth = 0.2),
         legend.position = "none",
         axis.line = element_line(color = "grey25", linewidth = 0.6),
@@ -2121,24 +2610,155 @@ ggplot(combined_fig_data, aes(x = estimate, y = contrast)) +
       ),
       strip.background = element_rect(fill = "grey95", color = "grey25", linewidth = 0.6))
 
-ggsave(here(figure_dir, "combined_figure.png"),
-       height = 6,
-       width = 8,
-       dpi = 600)
+ggsave(here(figure_dir, "combined_figure.svg"), height = 6, width = 8, web_fonts = falo_svg_fonts())
 ```
 
+## Robustness: Controlling for Demographics
 
+ATEs from the main models compared with the same models adjusted for age (standardised), gender, ideology, education level, and living standard (Model 4 in each model script).
 
+```{r}
+rq1.1.4 <- readRDS(here(model_dir, "RQ1", "m4.rds"))
+rq1.2.4 <- readRDS(here(model_dir, "RQ1", "cj4.rds"))
+rq2.1.4 <- readRDS(here(model_dir, "RQ2", "m4.rds"))
+rq2.2.4 <- readRDS(here(model_dir, "RQ2", "hu4.rds"))
+```
 
+```{r}
+# Treatment effects averaged over the observed data, as needed for the covariate-adjusted models
+comp_linear   <- function(m) avg_comparisons(m, variables = list(exp_condition = "pairwise"))
+comp_conjoint <- function(m) avg_slopes(m, variables = "conjoint_dem", by = "exp_condition",
+                                        re_formula = NA, hypothesis = ~pairwise)
+comp_hurdle   <- function(m) avg_comparisons(m, dpar = "hu", variables = list(exp_condition = "pairwise"))
 
+# Posterior draws of the pairwise contrasts in percentage points
+# sign = -1 flips the hurdle contrasts to the probability of viewing, as in the combined figure
+ate_draws <- function(obj, outcome, specification, id = "contrast", sign = 1) {
+  posterior_draws(obj) |>
+    as_tibble() |>
+    transmute(
+      drawid,
+      contrast      = .data[[id]] |> str_remove_all("[()]") |> str_to_title(),
+      estimate      = sign * draw * 100,
+      outcome       = outcome,
+      Specification = specification
+    )
+}
 
+controls_draws <- bind_rows(
+  ate_draws(comp_linear(rq1.1.1),   "Democratic Support", "Unadjusted"),
+  ate_draws(comp_linear(rq1.1.4),   "Democratic Support", "Adjusted"),
+  ate_draws(comp_conjoint(rq1.2.1), "Democratic Candidate Choice", "Unadjusted", id = "hypothesis"),
+  ate_draws(comp_conjoint(rq1.2.4), "Democratic Candidate Choice", "Adjusted", id = "hypothesis"),
+  ate_draws(comp_linear(rq2.1.1),   "Political Participation", "Unadjusted"),
+  ate_draws(comp_linear(rq2.1.4),   "Political Participation", "Adjusted"),
+  ate_draws(comp_hurdle(rq2.2.1),   "Interest in Democratic Involvement", "Unadjusted", sign = -1),
+  ate_draws(comp_hurdle(rq2.2.4),   "Interest in Democratic Involvement", "Adjusted", sign = -1)
+) |>
+  mutate(
+    outcome = factor(outcome, levels = c(
+      "Democratic Support",
+      "Democratic Candidate Choice",
+      "Political Participation",
+      "Interest in Democratic Involvement"
+    )),
+    contrast      = factor(contrast, levels = c("Anxiety - Hope", "Anxiety - Control", "Hope - Control")),
+    Specification = factor(Specification, levels = c("Unadjusted", "Adjusted"))
+  )
+```
 
+### Demographic Controls Table
 
+```{r}
+hdi_interval <- function(x, cred = 0.95) {
+  # Shortest interval containing 95% of the draws (same algorithm as hdi_excludes_zero())
+  x <- sort(x)
+  n <- length(x)
+  k <- n - floor(n * cred)
+  i <- which.min(x[(n - k + 1):n] - x[1:k])
+  c(x[i], x[n - k + i])
+}
 
+controls_summary <- controls_draws |>
+  group_by(outcome, contrast, Specification) |>
+  summarise(
+    Median = median(estimate),
+    lower  = hdi_interval(estimate)[1],
+    upper  = hdi_interval(estimate)[2],
+    PD     = (\(p) max(p, 1 - p))(mean(estimate > 0)),
+    .groups = "drop"
+  ) |>
+  mutate(HDI = sprintf("[%.2f, %.2f]", lower, upper)) |>
+  select(-lower, -upper) |>
+  pivot_wider(
+    names_from  = Specification,
+    values_from = c(Median, HDI, PD),
+    names_glue  = "{Specification} {.value}"
+  ) |>
+  arrange(outcome, contrast) |>
+  select(outcome, Contrast = contrast,
+         `Unadjusted Median`, `Unadjusted 95% HDI` = `Unadjusted HDI`, `Unadjusted PD`,
+         `Adjusted Median`,   `Adjusted 95% HDI`   = `Adjusted HDI`,   `Adjusted PD`)
 
+# Row index at which each outcome starts
+controls_blocks <- rle(as.character(controls_summary$outcome))
+controls_block_starts <- setNames(as.list(cumsum(c(1, head(controls_blocks$lengths, -1)))), controls_blocks$values)
+```
 
+```{r}
+controls_table <- controls_summary |>
+  mutate(across(ends_with("Median"), ~round(.x, 2)),
+         across(ends_with("PD"), ~round(.x, 3))) |>
+  select(-outcome) |>
+  tt(notes = paste(
+    "Note. Treatment effects in percentage points (posterior median and 95% HDI); PD = probability of direction.",
+    "Adjusted models control for age (standardised), gender, ideology, education level, and living standard (N = 1,895 in all models).",
+    "Democratic candidate choice: difference in the effect of the democratic candidate attribute; both models also control for the conjoint attributes,",
+    "and in the adjusted model each control variable is interacted with democratic behaviour.",
+    "Interest in democratic involvement: probability of choosing to view the political information (hurdle component, sign reversed)."
+  )) |>
+  group_tt(i = controls_block_starts)
 
+controls_table
+controls_table |>
+  save_tt(here(table_dir, "demographic_controls_ATE_table.docx"), overwrite = TRUE)
+```
 
+### Demographic Controls Figure
 
+```{r}
+#| fig-height: 6
+#| fig-width: 8
 
+controls_draws |>
+  mutate(contrast = fct_rev(contrast)) |>
+  ggplot(aes(x = estimate, y = contrast, color = Specification)) +
+  geom_vline(xintercept = 0, linetype = "dashed", color = "gray40", linewidth = 0.6) +
+  stat_pointinterval(
+    .width = c(0.50, 0.95),
+    point_interval = "median_hdi",
+    position = position_dodge(width = 0.5),
+    point_size = 2
+  ) +
+  scale_color_manual(
+    values = c("Unadjusted" = "#BBBBBB", "Adjusted" = "#364B9A"),
+    name = NULL,
+    guide = guide_legend(reverse = TRUE)
+  ) +
+  facet_wrap(~ outcome, nrow = 2, ncol = 2) +
+  scale_x_continuous(breaks = seq(-10, 10, by = 5), expand = expansion(add = 0.5)) +
+  coord_cartesian(xlim = c(-15, 15)) +
+  labs(x = "Percentage Points", y = NULL) +
+  theme_allround() +
+  theme(panel.grid.major.x = element_line(color = "grey90", linewidth = 0.2),
+        legend.position = "bottom",
+        axis.line = element_line(color = "grey25", linewidth = 0.6),
+        strip.text = element_text(
+          family = "Public Sans Semibold", face = "plain",
+          size = rel(0.9),
+          hjust = 0.5
+      ),
+      strip.background = element_rect(fill = "grey95", color = "grey25", linewidth = 0.6))
 
+ggsave(here(figure_dir, "combined_figure_controls.svg"), height = 6, width = 8, web_fonts = falo_svg_fonts())
+```

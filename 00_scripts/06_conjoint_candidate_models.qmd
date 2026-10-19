@@ -20,21 +20,23 @@ embed-resources: true
 # Execution options 
 execute:
   warning: false
+
+# Figures in the HTML are drawn with ragg, which shows the falo fonts
+knitr:
+  opts_chunk:
+    dev: "ragg_png"
+    dpi: 300
+    fig.retina: 1
+    fig.width: 6
+    fig.height: 3.7
+    fig.align: "center"
+    out.width: "90%"
 ---
 
 ```{r}
 #| include: false
 # set error messages to English
 Sys.setenv(LANG = "en")
-
-knitr::opts_chunk$set(
-  fig.align = "center", 
-  fig.retina = 3,
-  fig.width = 6, 
-  fig.height = (6 * 0.618),
-  out.width = "90%", 
-  collapse = FALSE
-)
 
 options(
   digits = 4,
@@ -56,18 +58,11 @@ pkgs <- c("here",         # System path management
           "tidyverse",    # ggplot, dplyr, and friends
           "datawizard",   # Data preparation tools
           "brms",         # Bayesian regression modelling in Stan
-          "cregg",        # Frequentist conjoint analysis
           "marginaleffects", # Model-based predictions, comparisons, and more marginalia
-          "tidybayes",    # Tools to work with Bayesian models 
+          "tidybayes",    # Tools to work with Bayesian models
           "tinytable",    # Minimalist tables
-          "modelsummary", # Data and model summaries with tables and plots
           "ggdist",       # Additional plot elements
-          # "ggrain",       # For fancy raincloud plots
-          # "GGally",       # ggpairs and other ggplot2 friends
-          # "ggsignif",     # Add significance to figures
-          "ggforce",         # extension to ggplot
-          "patchwork",    # Combine multiple ggplots
-          "showtext"      # Additional fonts for plots etc
+          "ggforce"       # extension to ggplot
           )
 
 groundhog.library(pkgs, "2026-01-01")
@@ -90,57 +85,13 @@ options(mc.cores = 4,
 
 ```{r}
 #| include: false
-
-showtext_auto()
-showtext_opts(dpi = 600)
-
-font_add_google("Public Sans", "Public Sans")
-font_add_google("Public Sans", "Public Sans Light", regular.wt = 300)
-font_add_google("Public Sans", "Public Sans Semibold", regular.wt = 600)
-
-# Custom ggplot theme
-theme_nice <- function() {
-  # General text family and base size
-  theme_minimal(base_family = "Public Sans", base_size = 14) +
-    theme(
-      # Remove minor grid lines for cleaner look
-      panel.grid.minor = element_blank(),
-      # Customize major grid lines color
-      panel.grid.major = element_blank(),
-      # Plot title: bold and custom relative size
-      plot.title = element_text(family = "Public Sans", face = "bold", size = rel(1.1), margin = margin(b = 10)),
-      # Subtitle and caption: lighter weight 
-      plot.subtitle = element_text(family = "Public Sans Light", face = "plain"),
-      plot.caption = element_text(family = "Public Sans Light", face = "plain"),
-      # Axis text: Relative size
-      axis.text = element_text(size = rel(0.9)),
-      # Axis titles: Semibold and custom relative size
-      axis.title = element_text(family = "Public Sans Semibold", size = rel(0.9)),
-      axis.title.x = element_text(hjust = 0.5),
-      axis.title.y = element_text(hjust = 0.5),
-      # Axis lines
-      axis.line = element_line(color = "grey25", linewidth = 0.8),
-      # Facet labels: bold text on grey background
-      strip.text = element_text(
-        family = "Public Sans Semibold", face = "plain",
-        size = rel(1),
-        hjust = 0.5
-      ),
-      strip.background = element_rect(fill = "grey95", color = "grey25", linewidth = 0.8), 
-      # Legend styling: compact and top-positioned
-      legend.title = element_text(family = "Public Sans Semibold", size = rel(0.8)),
-      legend.text = element_text(size = rel(0.8)),
-      legend.position = "top",
-      legend.justification = "center",
-      legend.title.position = "left",
-      legend.margin = margin(l = 0, t = 0)
-    )
+# Figures use the falo theme and fonts: https://github.com/olafborghi/FinallyAmazingLookingOutput
+if (!require("falo", quietly = TRUE)) {
+  if (!require("pak", quietly = TRUE)) install.packages("pak")
+  pak::pak("olafborghi/FinallyAmazingLookingOutput")
 }
-
-
-theme_set(theme_nice())
-update_geom_defaults("text", list(family = "Public Sans"))
-update_geom_defaults("label", list(family = "Public Sans"))
+library("falo")
+theme_set(theme_allround())
 ```
 
 ```{r}
@@ -175,11 +126,6 @@ df_long <- df_long |>
                      labels = c("Neither", "Economically good", "Economically bad"))) |> 
   mutate(conjoint_age_z = standardise(conjoint_age))
 
-levels(df_long$conjoint_sex)
-levels(df_long$conjoint_party)
-levels(df_long$conjoint_dem)
-levels(df_long$conjoint_eco)
-
 # Variable lookup table for later
 variable_lookup <- tibble(
   variable = c("conjoint_sex", "conjoint_age_z", "conjoint_party", "conjoint_dem", "conjoint_eco"),
@@ -203,7 +149,9 @@ options(marginaleffects_posterior_interval = "hdi")
 options(marginaleffects_posterior_center = stats::median)
 ```
 
-## Model 0 — Conjoint Choices
+## Main Models
+
+### Model 0 — Conjoint Choices
 
 ```{r}
 f_cj0 <- bf(conjoint_choice ~ conjoint_dem + conjoint_sex + conjoint_age_z + conjoint_party + conjoint_eco + (1 | id))
@@ -239,11 +187,11 @@ cj0 <- brm(
 print(cj0)
 ```
 
-#### Quantities of interest
+#### Quantities of Interest
 
 Thanks go to Andrew Heiss and his [amazing blog](https://www.andrewheiss.com/blog/2023/07/25/conjoint-bayesian-frequentist-guide/#finding-conjoint-amces-and-marginal-means-bayesianly) from where I borrow much of this code!
 
-##### Average Marginal Component Effects (AMCEs) 
+##### Average Marginal Component Effects (AMCEs)
 
 ```{r}
 cj0_slopes <- avg_slopes(cj0, 
@@ -310,9 +258,6 @@ cj0_plot_data <- cj0_levels |>
 ```{r}
 #| fig-height: 7
 #| fig-width: 8
-#| fig-dpi: 600
-#| fig-showtext: TRUE
-showtext_opts(dpi = 600)
 
 cj0_plot_data |> 
   
@@ -354,16 +299,13 @@ cj0_plot_data |>
     subtitle = "Posterior Distributions with Median and 95% HDI"
   ) +
   
-  theme_nice() +
+  theme_allround() +
   theme(
     legend.position = "none",
     panel.grid.major.x = element_line(color = "grey90", linewidth = 0.2)
   )
 
-ggsave(here(figure_dir, "conjoint_amce.png"),
-       height = 7,
-       width = 8,
-       dpi = 600)
+ggsave(here(figure_dir, "conjoint_amce.svg"), height = 7, width = 8, web_fonts = falo_svg_fonts())
 ```
 
 ##### Marginal Means
@@ -417,7 +359,7 @@ cj0_mm_table <- cj0_mm |>
 cj0_mm_table |> tt()
 ```
 
-## Model 1 — Primary Model
+### Model 1 — Primary Model
 
 ```{r}
 f_cj1 <- bf(conjoint_choice ~ conjoint_dem * exp_condition + conjoint_sex + conjoint_age_z + conjoint_party + conjoint_eco + (1 | id))
@@ -453,9 +395,9 @@ cj1 <- brm(
 print(cj1)
 ```
 
-### Quantities of Interest
+#### Quantities of Interest
 
-#### Average Comparisons
+##### Average Comparisons
 
 ```{r}
 cj1_main_com <- avg_comparisons(cj1, 
@@ -504,7 +446,7 @@ cj1_hyp <- avg_comparisons(cj1,
 cj1_hyp |> tt()
 ```
 
-#### Conditional Marginal Means
+##### Conditional Marginal Means
 
 ```{r}
 cj1_mms <- predictions(
@@ -514,12 +456,12 @@ cj1_mms <- predictions(
   posterior_draws()
 
 cj1_mms |> 
-  group_by(conjoint_dem, exp_condition) %>% 
+  group_by(conjoint_dem, exp_condition) |> 
   median_qi(draw) |> 
   tt()
 ```
 
-## Model 2 — Interaction with Age 
+### Model 2 — Interaction with Age Group
 
 ```{r}
 f_cj2 <- bf(conjoint_choice ~ conjoint_dem * exp_condition * age_group + conjoint_sex + conjoint_age_z + conjoint_party + conjoint_eco + (1 | id))
@@ -549,7 +491,88 @@ cj2 <- brm(
 print(cj2)
 ```
 
-## Model 3 — Interaction with Gender
+#### Quantities of Interest
+
+AMCE of democratic behaviour within each age group (averaged across conditions):
+
+```{r}
+cj2_mod <- avg_comparisons(cj2, 
+                           variables = list("conjoint_dem" = "pairwise"), 
+                           by = "age_group")
+
+cj2_mod |> 
+  as_tibble() |> 
+  select(Contrast = contrast,
+         `Age Group` = age_group,
+         Median = estimate,
+         "95% HDI Lower" = conf.low,
+         "95% HDI Upper" = conf.high
+  ) |> 
+  mutate(across(where(is.numeric), \(x) round(x, 3))) |> 
+  tt()
+```
+
+Differences in the AMCE of democratic behaviour between age groups:
+
+```{r}
+cj2_mod_diffs <- avg_comparisons(cj2, 
+                                 variables = list("conjoint_dem" = "pairwise"), 
+                                 by = "age_group", 
+                                 hypothesis = difference ~ pairwise) |> 
+  as_tibble() |> 
+  select(`Age Group Difference` = hypothesis,
+         Median = estimate,
+         "95% HDI Lower" = conf.low,
+         "95% HDI Upper" = conf.high
+  ) |> 
+  mutate(across(where(is.numeric), \(x) round(x, 3)))
+
+cj2_mod_diffs |> tt()
+```
+
+Treatment effects on the AMCE of democratic behaviour within each age group:
+
+```{r}
+cj2_hyp <- avg_comparisons(cj2,
+                           variables = list("conjoint_dem" = "pairwise"),
+                           by = c("exp_condition", "age_group"),
+                           hypothesis = difference ~ pairwise | age_group)
+
+cj2_hyp |>
+  as_tibble() |>
+  select(Hypothesis = hypothesis,
+         `Age Group` = age_group,
+         Median = estimate,
+         "95% HDI Lower" = conf.low,
+         "95% HDI Upper" = conf.high
+  ) |>
+  mutate(across(where(is.numeric), \(x) round(x, 3))) |>
+  tt()
+```
+
+Differences in the treatment effects between age groups:
+
+```{r}
+cj2_hyp_diffs <- cj2_hyp |>
+  posterior_draws() |>
+  select(drawid, hypothesis, age_group, draw) |>
+  pivot_wider(names_from = age_group, values_from = draw) |>
+  mutate(`(22-26 years) - (16-21 years)` = `22-26 years` - `16-21 years`) |>
+  pivot_longer(starts_with("("), names_to = "difference", values_to = "estimate") |>
+  group_by(hypothesis, difference) |>
+  median_hdi(estimate, .width = 0.95) |>
+  select(Hypothesis = hypothesis,
+         `Age Group Difference` = difference,
+         Median = estimate,
+         "95% HDI Lower" = .lower,
+         "95% HDI Upper" = .upper
+  ) |>
+  mutate(across(where(is.numeric), \(x) round(x, 3)))
+
+cj2_hyp_diffs |> tt()
+```
+
+### Model 3 — Interaction with Gender
 
 ```{r}
 f_cj3 <- bf(conjoint_choice ~ conjoint_dem * exp_condition * gender + conjoint_sex + conjoint_age_z + conjoint_party + conjoint_eco + (1 | id))
@@ -579,193 +602,94 @@ cj3 <- brm(
 print(cj3)
 ```
 
-## Visualization
+#### Quantities of Interest
 
-### Get Posterior Draws
+AMCE of democratic behaviour within each gender (averaged across conditions):
 
 ```{r}
-# CJ1: Overall cAMCEs by experimental condition
-cj1.cAMCEs <- cj1 |>
-  avg_slopes(
-    variables = "conjoint_dem",
-    by = "exp_condition",
-    re_formula = NA
-  ) |>
-  posterior_draws()
+cj3_mod <- avg_comparisons(cj3, 
+                           variables = list("conjoint_dem" = "pairwise"), 
+                           by = "gender")
 
-# Compute pairwise contrasts 
-cj1.contrasts <- cj1.cAMCEs |>
-  select(drawid, exp_condition, draw) |>  
-  pivot_wider(names_from = exp_condition, values_from = draw) |>
-  mutate(
-    `Anxiety − Control` = anxiety - control,
-    `Hope − Control` = hope - control,
-    `Hope − Anxiety` = hope - anxiety
-  ) |>
-  pivot_longer(
-    cols = c(`Anxiety − Control`, `Hope − Control`, `Hope − Anxiety`),
-    names_to = "contrast",
-    values_to = "estimate"
-  ) |>
-  mutate(
-    model = "ATE",
-    subgroup = "ATE"
-  )
-
-cj1.contrasts |>
-  group_by(contrast, model, subgroup) |>
-  median_hdi(estimate, .width = 0.95) |> tt()
+cj3_mod |> 
+  as_tibble() |> 
+  select(Contrast = contrast,
+         `Gender` = gender,
+         Median = estimate,
+         "95% HDI Lower" = conf.low,
+         "95% HDI Upper" = conf.high
+  ) |> 
+  mutate(across(where(is.numeric), \(x) round(x, 3))) |> 
+  tt()
 ```
 
+Differences in the AMCE of democratic behaviour between genders:
+
 ```{r}
-# CJ3: cAMCEs by condition × age group
-cj2.cAMCEs <- cj2 |>
-  avg_slopes(
-    variables = "conjoint_dem",
-    by = c("exp_condition", "age_group"),
-    re_formula = NA
-  ) |>
-  posterior_draws()
+cj3_mod_diffs <- avg_comparisons(cj3, 
+                                 variables = list("conjoint_dem" = "pairwise"), 
+                                 by = "gender", 
+                                 hypothesis = difference ~ pairwise) |> 
+  as_tibble() |> 
+  select(`Gender Difference` = hypothesis,
+         Median = estimate,
+         "95% HDI Lower" = conf.low,
+         "95% HDI Upper" = conf.high
+  ) |> 
+  mutate(across(where(is.numeric), \(x) round(x, 3)))
 
-# Compute pairwise contrasts within each age group
-cj2.contrasts <- cj2.cAMCEs |>
-  select(drawid, exp_condition, age_group, draw) |>
-  pivot_wider(names_from = exp_condition, values_from = draw) |>
-  mutate(
-    `Anxiety − Control` = anxiety - control,
-    `Hope − Control` = hope - control,
-    `Hope − Anxiety` = hope - anxiety
-  ) |>
-  pivot_longer(
-    cols = c(`Anxiety − Control`, `Hope − Control`, `Hope − Anxiety`),
-    names_to = "contrast",
-    values_to = "estimate"
-  ) |>
-  mutate(
-    model = "Age",
-    subgroup = as.character(age_group)
-  ) |>
-  select(-age_group)
-
-cj2.contrasts |>
-  group_by(contrast, model, subgroup) |>
-  median_hdi(estimate, .width = 0.95) |> tt()
+cj3_mod_diffs |> tt()
 ```
 
+Treatment effects on the AMCE of democratic behaviour within each gender:
+
 ```{r}
-# CJ4: cAMCEs by condition × gender
-cj3.cAMCEs <- cj3 |>
-  avg_slopes(
-    variables = "conjoint_dem",
-    by = c("exp_condition", "gender"),
-    re_formula = NA
-  ) |>
-  posterior_draws()
+cj3_hyp <- avg_comparisons(cj3,
+                           variables = list("conjoint_dem" = "pairwise"),
+                           by = c("exp_condition", "gender"),
+                           hypothesis = difference ~ pairwise | gender)
 
-# Compute pairwise contrasts within each gender
-cj3.contrasts <- cj3.cAMCEs |>
-  select(drawid, exp_condition, gender, draw) |>
-  pivot_wider(names_from = exp_condition, values_from = draw) |>
-  mutate(
-    `Anxiety − Control` = anxiety - control,
-    `Hope − Control` = hope - control,
-    `Hope − Anxiety` = hope - anxiety
+cj3_hyp |>
+  as_tibble() |>
+  select(Hypothesis = hypothesis,
+         Gender = gender,
+         Median = estimate,
+         "95% HDI Lower" = conf.low,
+         "95% HDI Upper" = conf.high
   ) |>
-  pivot_longer(
-    cols = c(`Anxiety − Control`, `Hope − Control`, `Hope − Anxiety`),
-    names_to = "contrast",
-    values_to = "estimate"
-  ) |>
-  mutate(
-    model = "Gender",
-    subgroup = as.character(gender)
-  ) |>
-  select(-gender)
-
-cj3.contrasts |>
-  group_by(contrast, model, subgroup) |>
-  median_hdi(estimate, .width = 0.95) |> tt()
+  mutate(across(where(is.numeric), \(x) round(x, 3))) |>
+  tt()
 ```
 
-```{r}
-# Combine all contrasts
-cj_pairwise_plot_data <- bind_rows(cj1.contrasts, cj2.contrasts, cj3.contrasts) |>
-  filter(subgroup != "other") |> 
-  mutate(
-    # Relabel gender
-    subgroup = case_when(
-      subgroup == "male" ~ "Men",
-      subgroup == "female" ~ "Women",
-      subgroup == "16-21 years" ~ "16-21",
-      subgroup == "22-26 years" ~ "22-26",
-      TRUE ~ subgroup
-    ),
-    # Set factor levels
-    contrast = factor(contrast, levels = c("Anxiety − Control", "Hope − Control", "Hope − Anxiety")),
-    model = factor(model, levels = c("ATE", "Age", "Gender")),
-    subgroup = factor(subgroup, levels = c("ATE", "22-26", "16-21", "Women", "Men"))
-  )
+Differences in the treatment effects between genders:
 
-# Compute whether HDI excludes zero for each group
-cj_hdi_check <- cj_pairwise_plot_data |>
-  group_by(model, contrast, subgroup) |>
+```{r}
+cj3_hyp_diffs <- cj3_hyp |>
+  posterior_draws() |>
+  select(drawid, hypothesis, gender, draw) |>
+  pivot_wider(names_from = gender, values_from = draw) |>
+  mutate(`(female) - (male)` = female - male,
+         `(other) - (male)` = other - male,
+         `(other) - (female)` = other - female) |>
+  pivot_longer(starts_with("("), names_to = "difference", values_to = "estimate") |>
+  group_by(hypothesis, difference) |>
   median_hdi(estimate, .width = 0.95) |>
-  mutate(excludes_zero = if_else(sign(.lower) == sign(.upper), "Excludes zero", "Includes zero")) |>
-  select(model, contrast, subgroup, excludes_zero)
+  select(Hypothesis = hypothesis,
+         `Gender Difference` = difference,
+         Median = estimate,
+         "95% HDI Lower" = .lower,
+         "95% HDI Upper" = .upper
+  ) |>
+  mutate(across(where(is.numeric), \(x) round(x, 3)))
+
+cj3_hyp_diffs |> tt()
 ```
 
-### Create Figure
+## Supplementary Models
 
-```{r}
-#| fig-height: 5.5
-#| fig-width: 8
-#| fig-dpi: 600
-#| fig-showtext: TRUE
-showtext_opts(dpi = 600)
-cj_pairwise_plot_data |>
-  mutate(estimate = estimate * 100) |>
-  left_join(cj_hdi_check, by = c("model", "contrast", "subgroup")) |>
-  ggplot(aes(x = estimate, y = subgroup, fill = excludes_zero)) +
-  geom_vline(xintercept = 0, linetype = "dashed", color = "gray40", linewidth = 0.6) +
-  stat_slabinterval(
-    .width = c(.95),
-    point_interval = "median_hdi",
-    scale = 0.7,
-    slab_alpha = 0.6,        
-    interval_alpha = 1,      
-    point_alpha = 1,          
-    normalize = "groups",
-    point_size = 2.5,
-    interval_size = 1.5) +
-  facet_grid(model ~ contrast, scales = "free_y", space = "free_y") +
-  scale_fill_manual(
-    values = c("Excludes zero" = "#364B9A", "Includes zero" = "#4A7BB7"),
-    name = "95% HDI",
-  ) +
-  # scale_color_manual(
-  #   values = c("Excludes zero" = "#364B9A", "Includes zero" = "#4A7BB7"),
-  #   name = "95% HDI",
-  # ) +
-  scale_x_continuous(limits = c(-20, 20), breaks = seq(-15, 15, by = 5), expand = expansion(add = 0.5)) +
-  labs(
-    x = "Percentage Points",
-    y = NULL,
-    title = "Effects on Democratic Candidate Preference",
-    subtitle = "Positive Differences = Preference for Democratic Candidates"
-  ) +
-  theme_nice() +
-  theme(
-    panel.grid.major.x = element_line(color = "grey90", linewidth = 0.2),
-    legend.position = "none"
-  )
+### Model 4 — Control for Demographics
 
-ggsave(here(figure_dir, "RQ1.2_ate_cate_posterior.png"),
-       height = 5.5,
-       width = 8,
-       dpi = 600)
-```
-
-## Model 4 — Control for Demograpics & Pre-Measures
+Each control is interacted with democratic behaviour, as main effects of respondent characteristics would only shift the overall probability of choosing a candidate.
 
 ```{r}
 df_control <- df_long |> 
@@ -775,7 +699,7 @@ df_control <- df_long |>
 ```
 
 ```{r}
-f_cj4 <- bf(conjoint_choice ~ conjoint_dem * exp_condition + conjoint_sex + conjoint_age_z + conjoint_party + conjoint_eco + scale(participant_age) + gender + ideology + education_level + living_standard + (1 | id))
+f_cj4 <- bf(conjoint_choice ~ conjoint_dem * exp_condition + conjoint_sex + conjoint_age_z + conjoint_party + conjoint_eco + conjoint_dem * (scale(participant_age) + gender + ideology + education_level + living_standard) + (1 | id))
 
 priors_cj4 <- c(
   prior(normal(0, 1), class = "Intercept"),
@@ -808,7 +732,36 @@ cj4 <- brm(
 print(cj4)
 ```
 
-## Model 5 — Pre-Registered Sample Only
+#### Quantities of Interest
+
+Treatment effects on the AMCE of democratic behaviour, adjusted for the controls:
+
+```{r}
+cj4_hyp <- avg_comparisons(cj4,
+                           variables = list("conjoint_dem" = "pairwise"),
+                           by = "exp_condition",
+                           hypothesis = ~pairwise) |>
+  as_tibble() |>
+  select(Hypothesis = hypothesis,
+         Median = estimate,
+         "95% HDI Lower" = conf.low,
+         "95% HDI Upper" = conf.high
+  ) |>
+  mutate(across(where(is.numeric), \(x) round(x, 3)))
+
+cj4_hyp |> tt()
+```
+
+Comparison with Model 1 (unadjusted):
+
+```{r}
+left_join(cj1_hyp, cj4_hyp,
+          by = "Hypothesis",
+          suffix = c(" (Unadjusted)", " (Adjusted)")) |>
+  tt()
+```
+
+### Model 5 — Pre-Registered Sample Only
 
 Participants aged 16-21 or participants who were recontacted:
 
@@ -851,21 +804,41 @@ cj5 <- brm(
 print(cj5)
 ```
 
-## Supplementary Models
+#### Quantities of Interest
 
-## Eco Model — Trading Off Democracy for Ecomony?
+Treatment effects on the AMCE of democratic behaviour in the preregistered sample:
 
 ```{r}
-f_cj_eco <- bf(conjoint_choice ~ conjoint_dem * conjoint_eco + conjoint_sex + conjoint_age_z + conjoint_party + (1 | id))
+cj5_hyp <- avg_comparisons(cj5, 
+                           variables = list("conjoint_dem" = "pairwise"), 
+                           by = "exp_condition", 
+                           hypothesis = ~pairwise) |> 
+  as_tibble() |> 
+  select(Hypothesis = hypothesis,
+         Median = estimate,
+         "95% HDI Lower" = conf.low,
+         "95% HDI Upper" = conf.high
+  ) |> 
+  mutate(across(where(is.numeric), \(x) round(x, 3))) 
+
+cj5_hyp |> tt()
+```
+
+### Party Model — Treatment Effects on Party Preferences
+
+Does the treatment change how often candidates of each party are chosen? Marginal means are used rather than conditional AMCEs, because differences in AMCEs between conditions depend on the choice of reference level (Leeper et al., 2020). Only the party attribute is interacted with condition; the interaction of democratic behaviour with condition is tested in Model 1.
+
+```{r}
+f_cj_party <- bf(conjoint_choice ~ conjoint_party * exp_condition + conjoint_dem + conjoint_sex + conjoint_age_z + conjoint_eco + (1 | id))
 ```
 
 ```{r}
 #| output: false
-cj_eco <- brm(
+cj_party <- brm(
   data = df_long,
   family = bernoulli(link = "logit"),
-  formula = f_cj_eco,
-  prior = priors_cj0,
+  formula = f_cj_party,
+  prior = priors_cj1,
   sample_prior = "yes",
   init = "random",
   chains = chains,
@@ -875,46 +848,511 @@ cj_eco <- brm(
   control = list(
     adapt_delta = adapt_delta,
     max_treedepth = max_treedepth),
-  file = here(model_dir, "cj_eco.rds")
+  file = here(model_dir, "cj_party.rds")
 )
 ```
 
 ```{r}
-print(cj_eco)
+print(cj_party)
 ```
 
-### Quantities of Interest
+#### Quantities of Interest
+
+Marginal means of party within each condition:
 
 ```{r}
-cj_eco_pred <- plot_predictions(cj_eco, by = c("conjoint_dem", "conjoint_eco"), draw = F)
+cj_party_mm <- avg_predictions(cj_party, 
+                               by = c("conjoint_party", "exp_condition"))
+
+cj_party_mm |> 
+  as_tibble() |> 
+  select(Level = conjoint_party,
+         Condition = exp_condition,
+         Median = estimate,
+         "95% HDI Lower" = conf.low,
+         "95% HDI Upper" = conf.high
+  ) |> 
+  mutate(across(where(is.numeric), \(x) round(x, 3))) |> 
+  tt()
+```
+
+Treatment effects on the marginal means of party:
+
+```{r}
+cj_party_hyp <- avg_predictions(cj_party, 
+                                by = c("conjoint_party", "exp_condition"), 
+                                hypothesis = difference ~ pairwise | conjoint_party) |> 
+  as_tibble() |> 
+  select(Hypothesis = hypothesis,
+         Level = conjoint_party,
+         Median = estimate,
+         "95% HDI Lower" = conf.low,
+         "95% HDI Upper" = conf.high
+  ) |> 
+  mutate(across(where(is.numeric), \(x) round(x, 3)))
+
+cj_party_hyp |> tt()
+```
+
+### Party Model with Controls
+
+Robustness check of the Party Model with the controls of Model 4, each interacted with party.
+
+```{r}
+f_cj_party_ctrl <- bf(conjoint_choice ~ conjoint_party * exp_condition + conjoint_dem + conjoint_sex + conjoint_age_z + conjoint_eco + conjoint_party * (scale(participant_age) + gender + ideology + education_level + living_standard) + (1 | id))
 ```
 
 ```{r}
-cj_eco_pred |> 
-  ggplot(aes(x = conjoint_dem, y = estimate, color = conjoint_eco)) +
-  geom_pointrange(aes(ymin = conf.low, ymax = conf.high),
-                  position = position_dodge(width = 0.2),
-                  size = 0.5, linewidth = 1) +
-  scale_y_continuous(
-    limits = c(0.1, 0.9), 
-    breaks = seq(0, 1, by = 0.2),
-    labels = scales::percent  
-  ) +
-  labs(
-    x = "Recent behaviour",
-    y = "Marginal mean",
-    title = "Marginal means",
-    color = "Economic reputation" 
-  ) 
+#| output: false
+cj_party_ctrl <- brm(
+  data = df_control,
+  family = bernoulli(link = "logit"),
+  formula = f_cj_party_ctrl,
+  prior = priors_cj1,
+  sample_prior = "yes",
+  init = "random",
+  chains = chains,
+  iter = iter,
+  warmup = warmup,
+  seed = bayes_seed,
+  control = list(
+    adapt_delta = adapt_delta,
+    max_treedepth = max_treedepth),
+  file = here(model_dir, "cj_party_ctrl.rds")
+)
 ```
 
+```{r}
+print(cj_party_ctrl)
+```
 
+#### Quantities of Interest
 
+Marginal means of party within each condition, adjusted for the controls:
 
+```{r}
+cj_party_ctrl_mm <- avg_predictions(cj_party_ctrl,
+                                    by = c("conjoint_party", "exp_condition"))
 
+cj_party_ctrl_mm |>
+  as_tibble() |>
+  select(Level = conjoint_party,
+         Condition = exp_condition,
+         Median = estimate,
+         "95% HDI Lower" = conf.low,
+         "95% HDI Upper" = conf.high
+  ) |>
+  mutate(across(where(is.numeric), \(x) round(x, 3))) |>
+  tt()
+```
 
+Treatment effects on the marginal means of party, adjusted for the controls:
 
+```{r}
+cj_party_ctrl_hyp <- avg_predictions(cj_party_ctrl,
+                                     by = c("conjoint_party", "exp_condition"),
+                                     hypothesis = difference ~ pairwise | conjoint_party) |>
+  as_tibble() |>
+  select(Hypothesis = hypothesis,
+         Level = conjoint_party,
+         Median = estimate,
+         "95% HDI Lower" = conf.low,
+         "95% HDI Upper" = conf.high
+  ) |>
+  mutate(across(where(is.numeric), \(x) round(x, 3)))
 
+cj_party_ctrl_hyp |> tt()
+```
 
+Comparison with the Party Model (unadjusted):
 
+```{r}
+left_join(cj_party_hyp, cj_party_ctrl_hyp,
+          by = c("Hypothesis", "Level"),
+          suffix = c(" (Unadjusted)", " (Adjusted)")) |>
+  tt()
+```
 
+## Exploratory Moderation Models
+
+Moderation of the treatment effects on the AMCE of democratic behaviour by subjective living standard, participant age (continuous), and parental ideology. Living standard: difficult and very difficult combined given the small number of respondents in "very difficult" (<5%). Continuous moderators are standardised (at the participant level) for estimation; treatment effects are reported at representative values (age 16, 21, 26; parental ideology 0, 5, 10), and moderation as the difference between the highest and lowest value.
+
+```{r}
+df_participants <- df_long |>
+  distinct(id, participant_age, parental_ideology)
+
+age_mean <- mean(df_participants$participant_age)
+age_sd <- sd(df_participants$participant_age)
+to_age_z <- \(x) (x - age_mean) / age_sd
+
+pi_mean <- mean(df_participants$parental_ideology, na.rm = TRUE)
+pi_sd <- sd(df_participants$parental_ideology, na.rm = TRUE)
+to_pi_z <- \(x) (x - pi_mean) / pi_sd
+
+df_long_het <- df_long |>
+  mutate(
+    living_standard = fct_collapse(
+      living_standard,
+      Comfortable = levels(living_standard)[1],
+      Coping = levels(living_standard)[2],
+      Difficult = levels(living_standard)[3:4]
+    ) |> fct_rev(),
+    participant_age_z = to_age_z(participant_age),
+    parental_ideology_z = to_pi_z(parental_ideology)
+  )
+
+df_long_het |> distinct(id, living_standard) |> count(living_standard)
+```
+
+### Model 8 — Interaction with Living Standard
+
+```{r}
+f_cj8 <- bf(conjoint_choice ~ conjoint_dem * exp_condition * living_standard + conjoint_sex + conjoint_age_z + conjoint_party + conjoint_eco + (1 | id))
+```
+
+```{r}
+#| output: false
+cj8 <- brm(
+  data = df_long_het,
+  family = bernoulli(link = "logit"),
+  formula = f_cj8,
+  prior = priors_cj1,
+  sample_prior = "yes",
+  init = "random",
+  chains = chains,
+  iter = iter,
+  warmup = warmup,
+  seed = bayes_seed,
+  control = list(
+    adapt_delta = adapt_delta,
+    max_treedepth = max_treedepth),
+  file = here(model_dir, "cj8.rds")
+)
+```
+
+```{r}
+print(cj8)
+```
+
+#### Quantities of Interest
+
+AMCE of democratic behaviour within each level of living standard (averaged across conditions):
+
+```{r}
+cj8_mod <- avg_comparisons(cj8, 
+                           variables = list("conjoint_dem" = "pairwise"), 
+                           by = "living_standard")
+
+cj8_mod |> 
+  as_tibble() |> 
+  select(Contrast = contrast,
+         `Living Standard` = living_standard,
+         Median = estimate,
+         "95% HDI Lower" = conf.low,
+         "95% HDI Upper" = conf.high
+  ) |> 
+  mutate(across(where(is.numeric), \(x) round(x, 3))) |> 
+  tt()
+```
+
+Differences in the AMCE of democratic behaviour between levels of living standard:
+
+```{r}
+cj8_mod_diffs <- avg_comparisons(cj8, 
+                                 variables = list("conjoint_dem" = "pairwise"), 
+                                 by = "living_standard", 
+                                 hypothesis = difference ~ pairwise) |> 
+  as_tibble() |> 
+  select(`Living Standard Difference` = hypothesis,
+         Median = estimate,
+         "95% HDI Lower" = conf.low,
+         "95% HDI Upper" = conf.high
+  ) |> 
+  mutate(across(where(is.numeric), \(x) round(x, 3)))
+
+cj8_mod_diffs |> tt()
+```
+
+Treatment effects on the AMCE of democratic behaviour within each level of living standard:
+
+```{r}
+cj8_hyp <- avg_comparisons(cj8,
+                           variables = list("conjoint_dem" = "pairwise"),
+                           by = c("exp_condition", "living_standard"),
+                           hypothesis = difference ~ pairwise | living_standard)
+
+cj8_hyp |>
+  as_tibble() |>
+  select(Hypothesis = hypothesis,
+         `Living Standard` = living_standard,
+         Median = estimate,
+         "95% HDI Lower" = conf.low,
+         "95% HDI Upper" = conf.high
+  ) |>
+  mutate(across(where(is.numeric), \(x) round(x, 3))) |>
+  tt()
+```
+
+Differences in the treatment effects between levels of living standard:
+
+```{r}
+cj8_hyp_diffs <- cj8_hyp |>
+  posterior_draws() |>
+  select(drawid, hypothesis, living_standard, draw) |>
+  pivot_wider(names_from = living_standard, values_from = draw) |>
+  mutate(`(Coping) - (Difficult)` = Coping - Difficult,
+         `(Comfortable) - (Difficult)` = Comfortable - Difficult,
+         `(Comfortable) - (Coping)` = Comfortable - Coping) |>
+  pivot_longer(starts_with("("), names_to = "difference", values_to = "estimate") |>
+  group_by(hypothesis, difference) |>
+  median_hdi(estimate, .width = 0.95) |>
+  select(Hypothesis = hypothesis,
+         `Living Standard Difference` = difference,
+         Median = estimate,
+         "95% HDI Lower" = .lower,
+         "95% HDI Upper" = .upper
+  ) |>
+  mutate(across(where(is.numeric), \(x) round(x, 3)))
+
+cj8_hyp_diffs |> tt()
+```
+
+### Model 9 — Interaction with Age (Continuous)
+
+```{r}
+f_cj9 <- bf(conjoint_choice ~ conjoint_dem * exp_condition * participant_age_z + conjoint_sex + conjoint_age_z + conjoint_party + conjoint_eco + (1 | id))
+```
+
+```{r}
+#| output: false
+cj9 <- brm(
+  data = df_long_het,
+  family = bernoulli(link = "logit"),
+  formula = f_cj9,
+  prior = priors_cj1,
+  sample_prior = "yes",
+  init = "random",
+  chains = chains,
+  iter = iter,
+  warmup = warmup,
+  seed = bayes_seed,
+  control = list(
+    adapt_delta = adapt_delta,
+    max_treedepth = max_treedepth),
+  file = here(model_dir, "cj9.rds")
+)
+```
+
+```{r}
+print(cj9)
+```
+
+#### Quantities of Interest
+
+AMCE of democratic behaviour at ages 16 and 26 (averaged across conditions; counterfactual grid over the observed data; every 4th posterior draw, i.e. 2,000 draws, to limit memory use):
+
+```{r}
+cj9_mod <- avg_comparisons(cj9, 
+                            variables = list("conjoint_dem" = "pairwise"), 
+                            newdata = datagrid(participant_age_z = to_age_z(c(16, 26)),
+                                               grid_type = "counterfactual"),
+                            by = "participant_age_z", 
+                            draw_ids = seq(1, 8000, by = 4))
+
+cj9_mod |> 
+  as_tibble() |> 
+  mutate(age = round(participant_age_z * age_sd + age_mean)) |> 
+  select(Contrast = contrast,
+         `Age` = age,
+         Median = estimate,
+         "95% HDI Lower" = conf.low,
+         "95% HDI Upper" = conf.high
+  ) |> 
+  mutate(across(where(is.numeric), \(x) round(x, 3))) |> 
+  tt()
+```
+
+Difference in the AMCE of democratic behaviour between 26 and 16:
+
+```{r}
+cj9_mod_diffs <- avg_comparisons(cj9, 
+                                  variables = list("conjoint_dem" = "pairwise"), 
+                                  newdata = datagrid(participant_age_z = to_age_z(c(16, 26)),
+                                                     grid_type = "counterfactual"),
+                                  by = "participant_age_z", 
+                                  hypothesis = ~ pairwise,
+                                  draw_ids = seq(1, 8000, by = 4)) |> 
+  as_tibble() |> 
+  select(`Difference (26 vs. 16)` = estimate,
+         "95% HDI Lower" = conf.low,
+         "95% HDI Upper" = conf.high
+  ) |> 
+  mutate(across(where(is.numeric), \(x) round(x, 3)))
+
+cj9_mod_diffs |> tt()
+```
+
+Treatment effects on the AMCE of democratic behaviour at ages 16, 21, and 26 (counterfactual grid over the observed data; every 4th posterior draw, i.e. 2,000 draws, to limit memory use):
+
+```{r}
+cj9_hyp <- avg_comparisons(cj9,
+                           variables = list("conjoint_dem" = "pairwise"),
+                           newdata = datagrid(participant_age_z = to_age_z(c(16, 21, 26)),
+                                              grid_type = "counterfactual"),
+                           by = c("exp_condition", "participant_age_z"),
+                           hypothesis = difference ~ pairwise | participant_age_z,
+                           draw_ids = seq(1, 8000, by = 4))
+
+cj9_hyp |>
+  as_tibble() |>
+  mutate(age = round(participant_age_z * age_sd + age_mean)) |>
+  select(Hypothesis = hypothesis,
+         Age = age,
+         Median = estimate,
+         "95% HDI Lower" = conf.low,
+         "95% HDI Upper" = conf.high
+  ) |>
+  mutate(across(where(is.numeric), \(x) round(x, 3))) |>
+  tt()
+```
+
+Differences in the treatment effects between ages 26 and 16:
+
+```{r}
+cj9_hyp_diffs <- cj9_hyp |>
+  posterior_draws() |>
+  mutate(age = round(participant_age_z * age_sd + age_mean)) |>
+  select(drawid, hypothesis, age, draw) |>
+  pivot_wider(names_from = age, values_from = draw) |>
+  mutate(estimate = `26` - `16`) |>
+  group_by(hypothesis) |>
+  median_hdi(estimate, .width = 0.95) |>
+  select(Hypothesis = hypothesis,
+         `Difference (26 vs. 16)` = estimate,
+         "95% HDI Lower" = .lower,
+         "95% HDI Upper" = .upper
+  ) |>
+  mutate(across(where(is.numeric), \(x) round(x, 3)))
+
+cj9_hyp_diffs |> tt()
+```
+
+### Model 10 — Interaction with Parental Ideology
+
+```{r}
+f_cj10 <- bf(conjoint_choice ~ conjoint_dem * exp_condition * parental_ideology_z + conjoint_sex + conjoint_age_z + conjoint_party + conjoint_eco + (1 | id))
+```
+
+```{r}
+#| output: false
+cj10 <- brm(
+  data = df_long_het,
+  family = bernoulli(link = "logit"),
+  formula = f_cj10,
+  prior = priors_cj1,
+  sample_prior = "yes",
+  init = "random",
+  chains = chains,
+  iter = iter,
+  warmup = warmup,
+  seed = bayes_seed,
+  control = list(
+    adapt_delta = adapt_delta,
+    max_treedepth = max_treedepth),
+  file = here(model_dir, "cj10.rds")
+)
+```
+
+```{r}
+print(cj10)
+```
+
+#### Quantities of Interest
+
+AMCE of democratic behaviour at parental ideology 0 (left) and 10 (right) (averaged across conditions; counterfactual grid over the observed data; every 4th posterior draw, i.e. 2,000 draws, to limit memory use):
+
+```{r}
+cj10_mod <- avg_comparisons(cj10, 
+                            variables = list("conjoint_dem" = "pairwise"), 
+                            newdata = datagrid(parental_ideology_z = to_pi_z(c(0, 10)),
+                                               grid_type = "counterfactual"),
+                            by = "parental_ideology_z", 
+                            draw_ids = seq(1, 8000, by = 4))
+
+cj10_mod |> 
+  as_tibble() |> 
+  mutate(parental_ideology = round(parental_ideology_z * pi_sd + pi_mean)) |> 
+  select(Contrast = contrast,
+         `Parental Ideology` = parental_ideology,
+         Median = estimate,
+         "95% HDI Lower" = conf.low,
+         "95% HDI Upper" = conf.high
+  ) |> 
+  mutate(across(where(is.numeric), \(x) round(x, 3))) |> 
+  tt()
+```
+
+Difference in the AMCE of democratic behaviour between 10 and 0:
+
+```{r}
+cj10_mod_diffs <- avg_comparisons(cj10, 
+                                  variables = list("conjoint_dem" = "pairwise"), 
+                                  newdata = datagrid(parental_ideology_z = to_pi_z(c(0, 10)),
+                                                     grid_type = "counterfactual"),
+                                  by = "parental_ideology_z", 
+                                  hypothesis = ~ pairwise,
+                                  draw_ids = seq(1, 8000, by = 4)) |> 
+  as_tibble() |> 
+  select(`Difference (10 vs. 0)` = estimate,
+         "95% HDI Lower" = conf.low,
+         "95% HDI Upper" = conf.high
+  ) |> 
+  mutate(across(where(is.numeric), \(x) round(x, 3)))
+
+cj10_mod_diffs |> tt()
+```
+
+Treatment effects on the AMCE of democratic behaviour at parental ideology 0 (left), 5, and 10 (right) (counterfactual grid over the observed data; every 4th posterior draw, i.e. 2,000 draws, to limit memory use):
+
+```{r}
+cj10_hyp <- avg_comparisons(cj10,
+                            variables = list("conjoint_dem" = "pairwise"),
+                            newdata = datagrid(parental_ideology_z = to_pi_z(c(0, 5, 10)),
+                                               grid_type = "counterfactual"),
+                            by = c("exp_condition", "parental_ideology_z"),
+                            hypothesis = difference ~ pairwise | parental_ideology_z,
+                            draw_ids = seq(1, 8000, by = 4))
+
+cj10_hyp |>
+  as_tibble() |>
+  mutate(parental_ideology = round(parental_ideology_z * pi_sd + pi_mean)) |>
+  select(Hypothesis = hypothesis,
+         `Parental Ideology` = parental_ideology,
+         Median = estimate,
+         "95% HDI Lower" = conf.low,
+         "95% HDI Upper" = conf.high
+  ) |>
+  mutate(across(where(is.numeric), \(x) round(x, 3))) |>
+  tt()
+```
+
+Differences in the treatment effects between parental ideology 10 (right) and 0 (left):
+
+```{r}
+cj10_hyp_diffs <- cj10_hyp |>
+  posterior_draws() |>
+  mutate(parental_ideology = round(parental_ideology_z * pi_sd + pi_mean)) |>
+  select(drawid, hypothesis, parental_ideology, draw) |>
+  pivot_wider(names_from = parental_ideology, values_from = draw) |>
+  mutate(estimate = `10` - `0`) |>
+  group_by(hypothesis) |>
+  median_hdi(estimate, .width = 0.95) |>
+  select(Hypothesis = hypothesis,
+         `Difference (10 vs. 0)` = estimate,
+         "95% HDI Lower" = .lower,
+         "95% HDI Upper" = .upper
+  ) |>
+  mutate(across(where(is.numeric), \(x) round(x, 3)))
+
+cj10_hyp_diffs |> tt()
+```

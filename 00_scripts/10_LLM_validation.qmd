@@ -1,0 +1,141 @@
+---
+title: "LLM Sentiment Validation"
+description: "Select the sample for the LLM validation and calculate IRR" 
+
+format:
+  html:
+    theme: paper
+    shift-heading-level-by: 1
+    code-tools: true
+    code-fold: true
+    toc: true
+    toc-fold: false
+    toc-location: right
+    toc-depth: 4
+    toc-title: "Contents"
+
+# Portability settings
+embed-resources: true
+
+# Execution options 
+execute:
+  warning: false
+---
+
+```{r}
+#| include: false
+# set error messages to English
+Sys.setenv(LANG = "en")
+
+options(
+  digits = 4,
+  width = 300,
+  dplyr.summarise.inform = FALSE)
+```
+
+```{r}
+#| include: false
+#| warning: true
+#| message: true
+if (!require("groundhog", quietly = TRUE)) {
+  install.packages("groundhog")
+}
+library("groundhog")
+
+# use groundhog to install and load packages
+pkgs <- c("here",         # System path management
+          "readxl",       # Load excel files
+          "tidyverse",    # ggplot, dplyr, and friends
+          "correlation",  # Nice correlation analyses
+          "irr",          # Inter-rater reliability
+          "rstatix"       # Basic tidy statistical tests
+          )
+
+groundhog.library(pkgs, "2026-01-01")
+```
+
+```{r}
+#| include: false
+data_dir <- here("01_data")
+```
+
+```{r}
+load(here(data_dir, "analysis", "df_wide.RData"))
+df <- df_wide 
+rm(df_wide)
+```
+
+## Select Random Sample for Coding
+
+```{r}
+set.seed(123) 
+
+validation_sample <- df |>
+  group_by(exp_condition) |>
+  slice_sample(n = 70) |>
+  ungroup() |>
+  slice_sample(prop = 1) |> 
+  select(id, exp_comment)
+```
+
+Save for manual coding (not evaluated on render, so the coded sample is not overwritten):
+
+```{r}
+#| eval: false
+write_csv(validation_sample, here(data_dir, "validation", "validation_sample.csv"))
+```
+
+## Load Coded Data
+
+```{r}
+coded_sample <- read_excel(here(data_dir, "validation", "validation_sample.xlsx"))
+```
+
+## IRR, Correlations, and Differences
+
+Join the data:
+
+```{r}
+validation_df <- coded_sample |> 
+  mutate(id = as.character(id)) |> 
+  left_join(df |> select(id, exp_comment_sentiment, anxiety_hope_dim, exp_condition), by = "id")
+```
+
+Correlations between the human coding, the LLM coding, and the self-reported anxiety–hope dimension:
+
+```{r}
+validation_df |>
+  count(human_na = is.na(exp_comment_sentiment_validation),
+        llm_na = is.na(exp_comment_sentiment))
+
+validation_df |>
+  drop_na(exp_comment_sentiment, exp_comment_sentiment_validation) |>
+  select(exp_comment_sentiment, exp_comment_sentiment_validation, anxiety_hope_dim) |>
+  correlation()
+```
+
+Intraclass correlation:
+
+```{r}
+validation_df |>
+  drop_na(exp_comment_sentiment, exp_comment_sentiment_validation) |>
+  select(exp_comment_sentiment_validation, exp_comment_sentiment) |>
+  icc(model = "twoway", type = "agreement", unit = "single")
+```
+
+Differences between conditions and raters:
+
+```{r}
+validation_long <- validation_df |>
+  drop_na(exp_comment_sentiment, exp_comment_sentiment_validation) |>
+  pivot_longer(c(exp_comment_sentiment, exp_comment_sentiment_validation),
+               names_to = "rater", values_to = "sentiment") |>
+  mutate(rater = if_else(rater == "exp_comment_sentiment", "LLM", "Human"))
+
+validation_long |>
+  group_by(exp_condition, rater) |>
+  summarise(m = mean(sentiment), sd = sd(sentiment), n = n(), .groups = "drop")
+
+validation_long |>
+  anova_test(dv = sentiment, wid = id, between = exp_condition, within = rater)
+```

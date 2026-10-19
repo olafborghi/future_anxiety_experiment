@@ -52,3 +52,13 @@ rsconnect/
 
 # Claude Code local config
 .claude/
+
+# Render and session artifacts
+Rplots.pdf
+tinytable_assets/
+.quarto/
+*_files/
+
+# Manuscript files kept next to the analysis, not part of the repo
+submitted_manuscript.docx
+supplementary_materials.pdf

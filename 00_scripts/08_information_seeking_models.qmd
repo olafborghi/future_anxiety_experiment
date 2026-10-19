@@ -1,5 +1,5 @@
 ---
-title: "RQ2.1 Political Information Seeking Models"
+title: "RQ2.2 Political Information Seeking Models"
 description: "How do feelings about the future affect young people's political information seeking?" 
 
 format:
@@ -20,6 +20,17 @@ embed-resources: true
 # Execution options 
 execute:
   warning: false
+
+# Figures in the HTML are drawn with ragg, which shows the falo fonts
+knitr:
+  opts_chunk:
+    dev: "ragg_png"
+    dpi: 300
+    fig.retina: 1
+    fig.width: 6
+    fig.height: 3.7
+    fig.align: "center"
+    out.width: "90%"
 ---
 
 ```{r}
@@ -27,22 +38,13 @@ execute:
 # set error messages to English
 Sys.setenv(LANG = "en")
 
-knitr::opts_chunk$set(
-  fig.align = "center", 
-  fig.retina = 3,
-  fig.width = 6, 
-  fig.height = (6 * 0.618),
-  out.width = "90%", 
-  collapse = FALSE
-)
-
 options(
   digits = 4,
   width = 300,
   dplyr.summarise.inform = FALSE)
 ```
 
-```{r libraries, warning=T, message=T}
+```{r}
 #| include: false
 #| warning: true
 #| message: true
@@ -54,19 +56,12 @@ library("groundhog")
 # use groundhog to install and load packages
 pkgs <- c("here",         # System path management
           "tidyverse",    # ggplot, dplyr, and friends
-          "datawizard",   # Data preparation tools
           "performance",  # Outlier, indices of model quality, and goodness of fit
           "brms",         # Bayesian regression modelling in Stan
           "marginaleffects", # Model-based predictions, comparisons, and more marginalia
-          "tidybayes",    # Tools to work with Bayesian models 
           "tinytable",    # Minimalist tables
           "modelsummary", # Data and model summaries with tables and plots
-          "ggdist",       # Additional plot elements
-          "ggrain",       # For fancy raincloud plots
-          # "GGally",       # ggpairs and other ggplot2 friends
-          # "ggsignif",     # Add significance to figures
-          "patchwork",    # Combine multiple ggplots
-          "showtext"      # Additional fonts for plots etc
+          "ggrain"        # For fancy raincloud plots
           )
 
 groundhog.library(pkgs, "2026-01-01")
@@ -89,57 +84,13 @@ options(mc.cores = 4,
 
 ```{r}
 #| include: false
-
-showtext_auto()
-showtext_opts(dpi = 600)
-
-font_add_google("Public Sans", "Public Sans")
-font_add_google("Public Sans", "Public Sans Light", regular.wt = 300)
-font_add_google("Public Sans", "Public Sans Semibold", regular.wt = 600)
-
-# Custom ggplot theme
-theme_nice <- function() {
-  # General text family and base size
-  theme_minimal(base_family = "Public Sans", base_size = 14) +
-    theme(
-      # Remove minor grid lines for cleaner look
-      panel.grid.minor = element_blank(),
-      # Customize major grid lines color
-      panel.grid.major = element_blank(),
-      # Plot title: bold and custom relative size
-      plot.title = element_text(family = "Public Sans", face = "bold", size = rel(1.1), margin = margin(b = 10)),
-      # Subtitle and caption: lighter weight 
-      plot.subtitle = element_text(family = "Public Sans Light", face = "plain"),
-      plot.caption = element_text(family = "Public Sans Light", face = "plain"),
-      # Axis text: Relative size
-      axis.text = element_text(size = rel(0.9)),
-      # Axis titles: Semibold and custom relative size
-      axis.title = element_text(family = "Public Sans Semibold", size = rel(0.9)),
-      axis.title.x = element_text(hjust = 0.5),
-      axis.title.y = element_text(hjust = 0.5),
-      # Axis lines
-      axis.line = element_line(color = "grey25", linewidth = 0.8),
-      # Facet labels: bold text on grey background
-      strip.text = element_text(
-        family = "Public Sans Semibold", face = "plain",
-        size = rel(1),
-        hjust = 0.5
-      ),
-      strip.background = element_rect(fill = "grey95", color = "grey25", linewidth = 0.8), 
-      # Legend styling: compact and top-positioned
-      legend.title = element_text(family = "Public Sans Semibold", size = rel(0.8)),
-      legend.text = element_text(size = rel(0.8)),
-      legend.position = "top",
-      legend.justification = "center",
-      legend.title.position = "left",
-      legend.margin = margin(l = 0, t = 0)
-    )
+# Figures use the falo theme and fonts: https://github.com/olafborghi/FinallyAmazingLookingOutput
+if (!require("falo", quietly = TRUE)) {
+  if (!require("pak", quietly = TRUE)) install.packages("pak")
+  pak::pak("olafborghi/FinallyAmazingLookingOutput")
 }
-
-
-theme_set(theme_nice())
-update_geom_defaults("text", list(family = "Public Sans"))
-update_geom_defaults("label", list(family = "Public Sans"))
+library("falo")
+theme_set(theme_allround())
 ```
 
 ```{r}
@@ -214,7 +165,7 @@ df |>
   labs(
     title = "Time Spent on Political Information",
     x = "Experimental Condition",
-    y = "Time (seconds)" # Add a y-axis label
+    y = "Time (seconds)"
   ) +
   theme(
     legend.position = "none"
@@ -254,7 +205,7 @@ options(marginaleffects_posterior_interval = "hdi")
 options(marginaleffects_posterior_center = stats::median)
 ```
 
-### Model 1 
+### Model 1 — Primary Model
 
 ```{r}
 f_hu1 <- bf(
@@ -295,13 +246,13 @@ hu1 <- brm(
 print(hu1)
 ```
 
-#### Quantities of interest
+#### Quantities of Interest
 
 ##### Initiation of Information Seeking
 
 ```{r}
 iis1_pred_avg <- avg_predictions(hu1,
-                               dpar = "hu",) |> 
+                               dpar = "hu") |> 
   as_tibble() |> 
   mutate(Median = 1 - estimate,
          "95% HDI Lower" = 1 - conf.high,
@@ -429,7 +380,49 @@ hu2 <- brm(
 summary(hu2)
 ```
 
-#### Quantities of interest
+#### Quantities of Interest
+
+##### Association with Age Group
+
+Difference in the probability of viewing the information between age groups, averaged across conditions (the hurdle part models the decision *not* to view, so the contrast is computed as lo - hi):
+
+```{r}
+iis2_mod_comps <- avg_comparisons(hu2, 
+                                  dpar = "hu", 
+                                  variables = list(age_group = "pairwise"), 
+                                  comparison = function(hi, lo) lo - hi,
+                                  newdata = datagrid(exp_condition = unique, age_group = unique)) |> 
+  as_tibble() |> 
+  mutate(contrast = str_replace(contrast, ", ", " - ")) |> 
+  select(Contrast = contrast,
+         Median = estimate,
+         "95% HDI Lower" = conf.low,
+         "95% HDI Upper" = conf.high
+         ) |> 
+  mutate(across(where(is.numeric), \(x) round(x, 4)))
+
+iis2_mod_comps |> tt()
+```
+
+Difference in viewing time (seconds) between age groups, averaged across conditions:
+
+```{r}
+eis2_mod_comps <- avg_comparisons(hu2, 
+                                  dpar = "mu", 
+                                  variables = list(age_group = "pairwise"), 
+                                  comparison = function(hi, lo) exp(hi) - exp(lo),
+                                  newdata = datagrid(exp_condition = unique, age_group = unique)) |> 
+  as_tibble() |> 
+  mutate(contrast = str_replace(contrast, ", ", " - ")) |> 
+  select(Contrast = contrast,
+         Median = estimate,
+         "95% HDI Lower" = conf.low,
+         "95% HDI Upper" = conf.high
+         ) |> 
+  mutate(across(where(is.numeric), \(x) round(x, 4)))
+
+eis2_mod_comps |> tt()
+```
 
 ##### Initiation of Information Seeking
 
@@ -450,6 +443,28 @@ iis2_comp <- avg_comparisons(hu2,
 iis2_comp |> tt()
 ```
 
+Differences in the treatment effects on the probability of viewing the information between age groups:
+
+```{r}
+iis2_comp_diffs <- avg_comparisons(hu2, 
+                                   dpar = "hu", 
+                                   variables = list(exp_condition = "pairwise"), 
+                                   comparison = function(hi, lo) lo - hi,
+                                   by = "age_group",
+                                   hypothesis = difference ~ pairwise | contrast) |> 
+  as_tibble() |> 
+  mutate(contrast = str_replace(contrast, ", ", " - ")) |> 
+  select(Contrast = contrast,
+         `Age Group Difference` = hypothesis,
+         Median = estimate,
+         "95% HDI Lower" = conf.low,
+         "95% HDI Upper" = conf.high
+         ) |> 
+  mutate(across(where(is.numeric), \(x) round(x, 4)))
+
+iis2_comp_diffs |> tt()
+```
+
 ##### Extent of Information Seeking
 
 ```{r}
@@ -468,6 +483,28 @@ eis2_comp <- avg_comparisons(hu2,
   mutate(across(where(is.numeric), \(x) round(x, 4)))
 
 eis2_comp |> tt()
+```
+
+Differences in the treatment effects on viewing time (seconds) between age groups:
+
+```{r}
+eis2_comp_diffs <- avg_comparisons(hu2, 
+                                   dpar = "mu",
+                                   variables = list(exp_condition = "pairwise"), 
+                                   comparison = function(hi, lo) exp(hi) - exp(lo),
+                                   by = "age_group",
+                                   hypothesis = difference ~ pairwise | contrast) |> 
+  as_tibble() |> 
+  mutate(contrast = str_replace(contrast, ", ", " - ")) |> 
+  select(Contrast = contrast,
+         `Age Group Difference` = hypothesis,
+         Median = estimate,
+         "95% HDI Lower" = conf.low,
+         "95% HDI Upper" = conf.high
+         ) |> 
+  mutate(across(where(is.numeric), \(x) round(x, 4)))
+
+eis2_comp_diffs |> tt()
 ```
 
 ### Model 3 — Interaction with Gender
@@ -503,12 +540,54 @@ hu3 <- brm(
 summary(hu3)
 ```
 
-#### Quantities of interest
+#### Quantities of Interest
+
+##### Association with Gender
+
+Difference in the probability of viewing the information between genders, averaged across conditions:
+
+```{r}
+iis3_mod_comps <- avg_comparisons(hu3, 
+                                  dpar = "hu", 
+                                  variables = list(gender = "pairwise"), 
+                                  comparison = function(hi, lo) lo - hi,
+                                  newdata = datagrid(exp_condition = unique, gender = unique)) |> 
+  as_tibble() |> 
+  mutate(contrast = str_replace(contrast, ", ", " - ")) |> 
+  select(Contrast = contrast,
+         Median = estimate,
+         "95% HDI Lower" = conf.low,
+         "95% HDI Upper" = conf.high
+         ) |> 
+  mutate(across(where(is.numeric), \(x) round(x, 4)))
+
+iis3_mod_comps |> tt()
+```
+
+Difference in viewing time (seconds) between genders, averaged across conditions:
+
+```{r}
+eis3_mod_comps <- avg_comparisons(hu3, 
+                                  dpar = "mu", 
+                                  variables = list(gender = "pairwise"), 
+                                  comparison = function(hi, lo) exp(hi) - exp(lo),
+                                  newdata = datagrid(exp_condition = unique, gender = unique)) |> 
+  as_tibble() |> 
+  mutate(contrast = str_replace(contrast, ", ", " - ")) |> 
+  select(Contrast = contrast,
+         Median = estimate,
+         "95% HDI Lower" = conf.low,
+         "95% HDI Upper" = conf.high
+         ) |> 
+  mutate(across(where(is.numeric), \(x) round(x, 4)))
+
+eis3_mod_comps |> tt()
+```
 
 ##### Initiation of Information Seeking
 
 ```{r}
-iis5_comp <- avg_comparisons(hu3, 
+iis3_comp <- avg_comparisons(hu3, 
                             dpar = "hu", 
                             variables = list(exp_condition = "pairwise"), 
                             by = "gender") |> 
@@ -521,13 +600,35 @@ iis5_comp <- avg_comparisons(hu3,
   ) |> 
   mutate(across(where(is.numeric), \(x) round(x, 4)))
 
-iis5_comp |> tt()
+iis3_comp |> tt()
+```
+
+Differences in the treatment effects on the probability of viewing the information between genders:
+
+```{r}
+iis3_comp_diffs <- avg_comparisons(hu3, 
+                                   dpar = "hu", 
+                                   variables = list(exp_condition = "pairwise"), 
+                                   comparison = function(hi, lo) lo - hi,
+                                   by = "gender",
+                                   hypothesis = difference ~ pairwise | contrast) |> 
+  as_tibble() |> 
+  mutate(contrast = str_replace(contrast, ", ", " - ")) |> 
+  select(Contrast = contrast,
+         `Gender Difference` = hypothesis,
+         Median = estimate,
+         "95% HDI Lower" = conf.low,
+         "95% HDI Upper" = conf.high
+         ) |> 
+  mutate(across(where(is.numeric), \(x) round(x, 4)))
+
+iis3_comp_diffs |> tt()
 ```
 
 ##### Extent of Information Seeking
 
 ```{r}
-eis5_comp <- avg_comparisons(hu3, 
+eis3_comp <- avg_comparisons(hu3, 
                              dpar = "mu",
                              variables = list(exp_condition = "pairwise"), 
                              comparison = function(hi, lo) exp(hi) - exp(lo),
@@ -541,7 +642,29 @@ eis5_comp <- avg_comparisons(hu3,
   ) |> 
   mutate(across(where(is.numeric), \(x) round(x, 4)))
 
-eis5_comp |> tt()
+eis3_comp |> tt()
+```
+
+Differences in the treatment effects on viewing time (seconds) between genders:
+
+```{r}
+eis3_comp_diffs <- avg_comparisons(hu3, 
+                                   dpar = "mu",
+                                   variables = list(exp_condition = "pairwise"), 
+                                   comparison = function(hi, lo) exp(hi) - exp(lo),
+                                   by = "gender",
+                                   hypothesis = difference ~ pairwise | contrast) |> 
+  as_tibble() |> 
+  mutate(contrast = str_replace(contrast, ", ", " - ")) |> 
+  select(Contrast = contrast,
+         `Gender Difference` = hypothesis,
+         Median = estimate,
+         "95% HDI Lower" = conf.low,
+         "95% HDI Upper" = conf.high
+         ) |> 
+  mutate(across(where(is.numeric), \(x) round(x, 4)))
+
+eis3_comp_diffs |> tt()
 ```
 
 ## Supplementary Models
@@ -584,7 +707,7 @@ hu4 <- brm(
 print(hu4)
 ```
 
-#### Quantities of interest
+#### Quantities of Interest
 
 ##### Initiation of Information Seeking
 
@@ -654,12 +777,12 @@ hu5 <- brm(
 print(hu5)
 ```
 
-#### Quantities of interest
+#### Quantities of Interest
 
 ##### Initiation of Information Seeking
 
 ```{r}
-iis3_comp <- avg_comparisons(hu5, 
+iis5_comp <- avg_comparisons(hu5, 
                             dpar = "hu", 
                             variables = list(exp_condition = "pairwise")) |> 
   as_tibble() |> 
@@ -670,13 +793,13 @@ iis3_comp <- avg_comparisons(hu5,
   ) |> 
   mutate(across(where(is.numeric), \(x) round(x, 3)))
 
-iis3_comp |> tt()
+iis5_comp |> tt()
 ```
 
-##### Extent of Informatoin Seeking
+##### Extent of Information Seeking
 
 ```{r}
-eis3_comp <- avg_comparisons(hu5, 
+eis5_comp <- avg_comparisons(hu5, 
                              dpar = "mu",
                              comparison = function(hi, lo) exp(hi) - exp(lo),
                              variables = list(exp_condition = "pairwise")) |> 
@@ -688,10 +811,10 @@ eis3_comp <- avg_comparisons(hu5,
   ) |> 
   mutate(across(where(is.numeric), \(x) round(x, 3)))
 
-eis3_comp |> tt()
+eis5_comp |> tt()
 ```
 
-### Model 6 — Attentive Participants Only 
+### Model 6 — Attentive Participants Only
 
 Attentive participants:
 ```{r}
@@ -728,7 +851,7 @@ hu6 <- brm(
 print(hu6)
 ```
 
-#### Quantities of interest
+#### Quantities of Interest
 
 ##### Initiation of Information Seeking
 
@@ -808,12 +931,12 @@ hu7 <- brm(
 print(hu7)
 ```
 
-#### Quantities of interest
+#### Quantities of Interest
 
 ##### Initiation of Information Seeking
 
 ```{r}
-iis6_comp <- avg_comparisons(hu7, 
+iis7_comp <- avg_comparisons(hu7, 
                              dpar = "hu", 
                              variables = list(exp_condition = "pairwise")) |> 
   as_tibble() |> 
@@ -824,13 +947,13 @@ iis6_comp <- avg_comparisons(hu7,
   ) |> 
   mutate(across(where(is.numeric), \(x) round(x, 3)))
 
-iis6_comp |> tt()
+iis7_comp |> tt()
 ```
 
 ##### Extent of Information Seeking
 
 ```{r}
-eis6_comp <- avg_comparisons(hu7, 
+eis7_comp <- avg_comparisons(hu7, 
                              dpar = "mu",
                              comparison = function(hi, lo) exp(hi) - exp(lo),
                              variables = list(exp_condition = "pairwise")) |> 
@@ -842,17 +965,588 @@ eis6_comp <- avg_comparisons(hu7,
   ) |> 
   mutate(across(where(is.numeric), \(x) round(x, 3)))
 
-eis6_comp |> tt()
+eis7_comp |> tt()
 ```
 
+## Exploratory Moderation Models
 
+Moderation of the treatment effects on initiation and extent of information seeking by subjective living standard, age (continuous), and parental ideology. Living standard: difficult and very difficult combined given the small number of respondents in "very difficult" (<5%). Continuous moderators are standardised for estimation; as neither part of the hurdle model is linear on the reported scale, treatment effects are reported at representative values (age 16, 21, 26; parental ideology 0, 5, 10), and moderation as the difference between the highest and lowest value. Initiation is reported as the probability of viewing the information (i.e., 1 - hu).
 
+```{r}
+df_info_het <- df_info |>
+  mutate(
+    living_standard = fct_collapse(
+      living_standard,
+      Comfortable = levels(living_standard)[1],
+      Coping = levels(living_standard)[2],
+      Difficult = levels(living_standard)[3:4]
+    ) |> fct_rev()
+  )
 
+age_mean <- mean(df_info_het$age)
+age_sd <- sd(df_info_het$age)
+to_age_z <- \(x) (x - age_mean) / age_sd
 
+pi_mean <- mean(df_info_het$parental_ideology, na.rm = TRUE)
+pi_sd <- sd(df_info_het$parental_ideology, na.rm = TRUE)
+to_pi_z <- \(x) (x - pi_mean) / pi_sd
 
+df_info_het <- df_info_het |>
+  mutate(age_z = to_age_z(age),
+         parental_ideology_z = to_pi_z(parental_ideology))
 
+df_info_het |> count(living_standard)
+```
 
+### Model 8 — Interaction with Living Standard
 
+```{r}
+f_hu8 <- bf(
+  polinfo ~ exp_condition * living_standard,
+  hu ~ exp_condition * living_standard)
+```
 
+```{r}
+#| output: false
+hu8 <- brm(
+  data = df_info_het,
+  formula = f_hu8,
+  family = hurdle_lognormal(),
+  prior = priors_hu1,
+  sample_prior = "yes",
+  init = "random",
+  chains = chains,
+  iter = iter,
+  warmup = warmup,
+  seed = bayes_seed,
+  control = list(
+    adapt_delta = adapt_delta,
+    max_treedepth = max_treedepth
+  ),
+  file = here(model_dir, "hu8.rds")
+)
+```
 
+```{r}
+summary(hu8)
+```
 
+#### Quantities of Interest
+
+##### Association with Living Standard
+
+Difference in the probability of viewing the information between levels of living standard, averaged across conditions:
+
+```{r}
+iis8_mod_comps <- avg_comparisons(hu8, 
+                                  dpar = "hu", 
+                                  variables = list(living_standard = "pairwise"), 
+                                  comparison = function(hi, lo) lo - hi,
+                                  newdata = datagrid(exp_condition = unique, living_standard = unique)) |> 
+  as_tibble() |> 
+  mutate(contrast = str_replace(contrast, ", ", " - ")) |> 
+  select(Contrast = contrast,
+         Median = estimate,
+         "95% HDI Lower" = conf.low,
+         "95% HDI Upper" = conf.high
+         ) |> 
+  mutate(across(where(is.numeric), \(x) round(x, 4)))
+
+iis8_mod_comps |> tt()
+```
+
+Difference in viewing time (seconds) between levels of living standard, averaged across conditions:
+
+```{r}
+eis8_mod_comps <- avg_comparisons(hu8, 
+                                  dpar = "mu", 
+                                  variables = list(living_standard = "pairwise"), 
+                                  comparison = function(hi, lo) exp(hi) - exp(lo),
+                                  newdata = datagrid(exp_condition = unique, living_standard = unique)) |> 
+  as_tibble() |> 
+  mutate(contrast = str_replace(contrast, ", ", " - ")) |> 
+  select(Contrast = contrast,
+         Median = estimate,
+         "95% HDI Lower" = conf.low,
+         "95% HDI Upper" = conf.high
+         ) |> 
+  mutate(across(where(is.numeric), \(x) round(x, 4)))
+
+eis8_mod_comps |> tt()
+```
+
+##### Initiation of Information Seeking
+
+Treatment effects on the probability of viewing the information within each level of living standard:
+
+```{r}
+iis8_comp <- avg_comparisons(hu8, 
+                              dpar = "hu", 
+                              variables = list(exp_condition = "pairwise"), 
+                              comparison = function(hi, lo) lo - hi,
+                              by = "living_standard") |> 
+  as_tibble() |> 
+  mutate(contrast = str_replace(contrast, ", ", " - ")) |> 
+  select(Contrast = contrast,
+         `Living Standard` = living_standard,
+         Median = estimate,
+         "95% HDI Lower" = conf.low,
+         "95% HDI Upper" = conf.high
+         ) |> 
+  mutate(across(where(is.numeric), \(x) round(x, 4)))
+
+iis8_comp |> tt()
+```
+
+Differences in the treatment effects on the probability of viewing the information between living standards:
+
+```{r}
+iis8_comp_diffs <- avg_comparisons(hu8, 
+                                   dpar = "hu", 
+                                   variables = list(exp_condition = "pairwise"), 
+                                   comparison = function(hi, lo) lo - hi,
+                                   by = "living_standard",
+                                   hypothesis = difference ~ pairwise | contrast) |> 
+  as_tibble() |> 
+  mutate(contrast = str_replace(contrast, ", ", " - ")) |> 
+  select(Contrast = contrast,
+         `Living Standard Difference` = hypothesis,
+         Median = estimate,
+         "95% HDI Lower" = conf.low,
+         "95% HDI Upper" = conf.high
+         ) |> 
+  mutate(across(where(is.numeric), \(x) round(x, 4)))
+
+iis8_comp_diffs |> tt()
+```
+
+##### Extent of Information Seeking
+
+Treatment effects on viewing time (seconds) within each level of living standard:
+
+```{r}
+eis8_comp <- avg_comparisons(hu8, 
+                              dpar = "mu",
+                              variables = list(exp_condition = "pairwise"), 
+                              comparison = function(hi, lo) exp(hi) - exp(lo),
+                              by = "living_standard") |> 
+  as_tibble() |> 
+  mutate(contrast = str_replace(contrast, ", ", " - ")) |> 
+  select(Contrast = contrast,
+         `Living Standard` = living_standard,
+         Median = estimate,
+         "95% HDI Lower" = conf.low,
+         "95% HDI Upper" = conf.high
+         ) |> 
+  mutate(across(where(is.numeric), \(x) round(x, 4)))
+
+eis8_comp |> tt()
+```
+
+Differences in the treatment effects on viewing time (seconds) between living standards:
+
+```{r}
+eis8_comp_diffs <- avg_comparisons(hu8, 
+                                   dpar = "mu",
+                                   variables = list(exp_condition = "pairwise"), 
+                                   comparison = function(hi, lo) exp(hi) - exp(lo),
+                                   by = "living_standard",
+                                   hypothesis = difference ~ pairwise | contrast) |> 
+  as_tibble() |> 
+  mutate(contrast = str_replace(contrast, ", ", " - ")) |> 
+  select(Contrast = contrast,
+         `Living Standard Difference` = hypothesis,
+         Median = estimate,
+         "95% HDI Lower" = conf.low,
+         "95% HDI Upper" = conf.high
+         ) |> 
+  mutate(across(where(is.numeric), \(x) round(x, 4)))
+
+eis8_comp_diffs |> tt()
+```
+
+### Model 9 — Interaction with Age (Continuous)
+
+```{r}
+f_hu9 <- bf(
+  polinfo ~ exp_condition * age_z,
+  hu ~ exp_condition * age_z)
+```
+
+```{r}
+#| output: false
+hu9 <- brm(
+  data = df_info_het,
+  formula = f_hu9,
+  family = hurdle_lognormal(),
+  prior = priors_hu1,
+  sample_prior = "yes",
+  init = "random",
+  chains = chains,
+  iter = iter,
+  warmup = warmup,
+  seed = bayes_seed,
+  control = list(
+    adapt_delta = adapt_delta,
+    max_treedepth = max_treedepth
+  ),
+  file = here(model_dir, "hu9.rds")
+)
+```
+
+```{r}
+summary(hu9)
+```
+
+#### Quantities of Interest
+
+##### Association with Age
+
+Probability of viewing the information at age 16 and 26, averaged across conditions:
+
+```{r}
+iis9_mod_pred <- avg_predictions(hu9,
+                                  dpar = "hu",
+                                  newdata = datagrid(exp_condition = unique, age_z = to_age_z(c(16, 26))),
+                                  by = "age_z") |> 
+  as_tibble() |> 
+  # Flip the direction as hu models decision NOT to view
+  mutate(age = round(age_z * age_sd + age_mean),
+         Median = 1 - estimate,
+         "95% HDI Lower" = 1 - conf.high,
+         "95% HDI Upper" = 1 - conf.low
+         ) |> 
+  select(`Age` = age,
+         Median,
+         "95% HDI Lower",
+         "95% HDI Upper" 
+         ) |> 
+  mutate(across(where(is.numeric), \(x) round(x, 4)))
+
+iis9_mod_pred |> tt()
+```
+
+Difference in the probability of viewing the information between 26 and 16:
+
+```{r}
+iis9_mod_diff <- avg_predictions(hu9,
+                                  dpar = "hu",
+                                  newdata = datagrid(exp_condition = unique, age_z = to_age_z(c(16, 26))),
+                                  by = "age_z",
+                                  hypothesis = ~ pairwise) |> 
+  as_tibble() |> 
+  # Flip the direction as hu models decision NOT to view
+  mutate(Median = -estimate,
+         "95% HDI Lower" = -conf.high,
+         "95% HDI Upper" = -conf.low
+         ) |> 
+  select(Median,
+         "95% HDI Lower",
+         "95% HDI Upper" 
+         ) |> 
+  mutate(across(where(is.numeric), \(x) round(x, 4)))
+
+iis9_mod_diff |> tt()
+```
+
+Difference in median viewing time (seconds) between 26 and 16:
+
+```{r}
+eis9_mod_diff <- avg_predictions(hu9,
+                                  dpar = "mu",
+                                  transform = exp, # Translates the log-scale mu to the natural scale median
+                                  newdata = datagrid(exp_condition = unique, age_z = to_age_z(c(16, 26))),
+                                  by = "age_z",
+                                  hypothesis = ~ pairwise) |> 
+  as_tibble() |> 
+  select(Median = estimate,
+         "95% HDI Lower" = conf.low,
+         "95% HDI Upper" = conf.high
+         ) |> 
+  mutate(across(where(is.numeric), \(x) round(x, 4)))
+
+eis9_mod_diff |> tt()
+```
+
+##### Initiation of Information Seeking
+
+Treatment effects on the probability of viewing the information at ages 16, 21, and 26:
+
+```{r}
+iis9_comp <- comparisons(hu9, 
+                          dpar = "hu", 
+                          variables = list(exp_condition = "pairwise"), 
+                          comparison = function(hi, lo) lo - hi,
+                          newdata = datagrid(age_z = to_age_z(c(16, 21, 26)))) |> 
+  as_tibble() |> 
+  mutate(contrast = str_replace(contrast, ", ", " - "),
+         age = round(age_z * age_sd + age_mean)) |> 
+  select(Contrast = contrast,
+         `Age` = age,
+         Median = estimate,
+         "95% HDI Lower" = conf.low,
+         "95% HDI Upper" = conf.high
+         ) |> 
+  mutate(across(where(is.numeric), \(x) round(x, 4)))
+
+iis9_comp |> tt()
+```
+
+Differences in the treatment effects on the probability of viewing the information between 26 and 16:
+
+```{r}
+iis9_comp_diffs <- comparisons(hu9, 
+                                dpar = "hu", 
+                                variables = list(exp_condition = "pairwise"), 
+                                comparison = function(hi, lo) lo - hi,
+                                newdata = datagrid(age_z = to_age_z(c(16, 26))),
+                                hypothesis = difference ~ pairwise | contrast) |> 
+  as_tibble() |> 
+  mutate(contrast = str_replace(contrast, ", ", " - ")) |> 
+  select(Contrast = contrast,
+         `Difference (26 vs. 16)` = estimate,
+         "95% HDI Lower" = conf.low,
+         "95% HDI Upper" = conf.high
+         ) |> 
+  mutate(across(where(is.numeric), \(x) round(x, 4)))
+
+iis9_comp_diffs |> tt()
+```
+
+##### Extent of Information Seeking
+
+Treatment effects on viewing time (seconds) at ages 16, 21, and 26:
+
+```{r}
+eis9_comp <- comparisons(hu9, 
+                          dpar = "mu",
+                          variables = list(exp_condition = "pairwise"), 
+                          comparison = function(hi, lo) exp(hi) - exp(lo),
+                          newdata = datagrid(age_z = to_age_z(c(16, 21, 26)))) |> 
+  as_tibble() |> 
+  mutate(contrast = str_replace(contrast, ", ", " - "),
+         age = round(age_z * age_sd + age_mean)) |> 
+  select(Contrast = contrast,
+         `Age` = age,
+         Median = estimate,
+         "95% HDI Lower" = conf.low,
+         "95% HDI Upper" = conf.high
+         ) |> 
+  mutate(across(where(is.numeric), \(x) round(x, 4)))
+
+eis9_comp |> tt()
+```
+
+Differences in the treatment effects on viewing time (seconds) between 26 and 16:
+
+```{r}
+eis9_comp_diffs <- comparisons(hu9, 
+                                dpar = "mu",
+                                variables = list(exp_condition = "pairwise"), 
+                                comparison = function(hi, lo) exp(hi) - exp(lo),
+                                newdata = datagrid(age_z = to_age_z(c(16, 26))),
+                                hypothesis = difference ~ pairwise | contrast) |> 
+  as_tibble() |> 
+  mutate(contrast = str_replace(contrast, ", ", " - ")) |> 
+  select(Contrast = contrast,
+         `Difference (26 vs. 16)` = estimate,
+         "95% HDI Lower" = conf.low,
+         "95% HDI Upper" = conf.high
+         ) |> 
+  mutate(across(where(is.numeric), \(x) round(x, 4)))
+
+eis9_comp_diffs |> tt()
+```
+
+### Model 10 — Interaction with Parental Ideology
+
+```{r}
+f_hu10 <- bf(
+  polinfo ~ exp_condition * parental_ideology_z,
+  hu ~ exp_condition * parental_ideology_z)
+```
+
+```{r}
+#| output: false
+hu10 <- brm(
+  data = df_info_het,
+  formula = f_hu10,
+  family = hurdle_lognormal(),
+  prior = priors_hu1,
+  sample_prior = "yes",
+  init = "random",
+  chains = chains,
+  iter = iter,
+  warmup = warmup,
+  seed = bayes_seed,
+  control = list(
+    adapt_delta = adapt_delta,
+    max_treedepth = max_treedepth
+  ),
+  file = here(model_dir, "hu10.rds")
+)
+```
+
+```{r}
+summary(hu10)
+```
+
+#### Quantities of Interest
+
+##### Association with Parental Ideology
+
+Probability of viewing the information at parental ideology 0 and 10, averaged across conditions:
+
+```{r}
+iis10_mod_pred <- avg_predictions(hu10,
+                                  dpar = "hu",
+                                  newdata = datagrid(exp_condition = unique, parental_ideology_z = to_pi_z(c(0, 10))),
+                                  by = "parental_ideology_z") |> 
+  as_tibble() |> 
+  # Flip the direction as hu models decision NOT to view
+  mutate(parental_ideology = round(parental_ideology_z * pi_sd + pi_mean),
+         Median = 1 - estimate,
+         "95% HDI Lower" = 1 - conf.high,
+         "95% HDI Upper" = 1 - conf.low
+         ) |> 
+  select(`Parental Ideology` = parental_ideology,
+         Median,
+         "95% HDI Lower",
+         "95% HDI Upper" 
+         ) |> 
+  mutate(across(where(is.numeric), \(x) round(x, 4)))
+
+iis10_mod_pred |> tt()
+```
+
+Difference in the probability of viewing the information between 10 and 0:
+
+```{r}
+iis10_mod_diff <- avg_predictions(hu10,
+                                  dpar = "hu",
+                                  newdata = datagrid(exp_condition = unique, parental_ideology_z = to_pi_z(c(0, 10))),
+                                  by = "parental_ideology_z",
+                                  hypothesis = ~ pairwise) |> 
+  as_tibble() |> 
+  # Flip the direction as hu models decision NOT to view
+  mutate(Median = -estimate,
+         "95% HDI Lower" = -conf.high,
+         "95% HDI Upper" = -conf.low
+         ) |> 
+  select(Median,
+         "95% HDI Lower",
+         "95% HDI Upper" 
+         ) |> 
+  mutate(across(where(is.numeric), \(x) round(x, 4)))
+
+iis10_mod_diff |> tt()
+```
+
+Difference in median viewing time (seconds) between 10 and 0:
+
+```{r}
+eis10_mod_diff <- avg_predictions(hu10,
+                                  dpar = "mu",
+                                  transform = exp, # Translates the log-scale mu to the natural scale median
+                                  newdata = datagrid(exp_condition = unique, parental_ideology_z = to_pi_z(c(0, 10))),
+                                  by = "parental_ideology_z",
+                                  hypothesis = ~ pairwise) |> 
+  as_tibble() |> 
+  select(Median = estimate,
+         "95% HDI Lower" = conf.low,
+         "95% HDI Upper" = conf.high
+         ) |> 
+  mutate(across(where(is.numeric), \(x) round(x, 4)))
+
+eis10_mod_diff |> tt()
+```
+
+##### Initiation of Information Seeking
+
+Treatment effects on the probability of viewing the information at parental ideology 0 (left), 5, and 10 (right):
+
+```{r}
+iis10_comp <- comparisons(hu10, 
+                          dpar = "hu", 
+                          variables = list(exp_condition = "pairwise"), 
+                          comparison = function(hi, lo) lo - hi,
+                          newdata = datagrid(parental_ideology_z = to_pi_z(c(0, 5, 10)))) |> 
+  as_tibble() |> 
+  mutate(contrast = str_replace(contrast, ", ", " - "),
+         parental_ideology = round(parental_ideology_z * pi_sd + pi_mean)) |> 
+  select(Contrast = contrast,
+         `Parental Ideology` = parental_ideology,
+         Median = estimate,
+         "95% HDI Lower" = conf.low,
+         "95% HDI Upper" = conf.high
+         ) |> 
+  mutate(across(where(is.numeric), \(x) round(x, 4)))
+
+iis10_comp |> tt()
+```
+
+Differences in the treatment effects on the probability of viewing the information between 10 and 0:
+
+```{r}
+iis10_comp_diffs <- comparisons(hu10, 
+                                dpar = "hu", 
+                                variables = list(exp_condition = "pairwise"), 
+                                comparison = function(hi, lo) lo - hi,
+                                newdata = datagrid(parental_ideology_z = to_pi_z(c(0, 10))),
+                                hypothesis = difference ~ pairwise | contrast) |> 
+  as_tibble() |> 
+  mutate(contrast = str_replace(contrast, ", ", " - ")) |> 
+  select(Contrast = contrast,
+         `Difference (10 vs. 0)` = estimate,
+         "95% HDI Lower" = conf.low,
+         "95% HDI Upper" = conf.high
+         ) |> 
+  mutate(across(where(is.numeric), \(x) round(x, 4)))
+
+iis10_comp_diffs |> tt()
+```
+
+##### Extent of Information Seeking
+
+Treatment effects on viewing time (seconds) at parental ideology 0 (left), 5, and 10 (right):
+
+```{r}
+eis10_comp <- comparisons(hu10, 
+                          dpar = "mu",
+                          variables = list(exp_condition = "pairwise"), 
+                          comparison = function(hi, lo) exp(hi) - exp(lo),
+                          newdata = datagrid(parental_ideology_z = to_pi_z(c(0, 5, 10)))) |> 
+  as_tibble() |> 
+  mutate(contrast = str_replace(contrast, ", ", " - "),
+         parental_ideology = round(parental_ideology_z * pi_sd + pi_mean)) |> 
+  select(Contrast = contrast,
+         `Parental Ideology` = parental_ideology,
+         Median = estimate,
+         "95% HDI Lower" = conf.low,
+         "95% HDI Upper" = conf.high
+         ) |> 
+  mutate(across(where(is.numeric), \(x) round(x, 4)))
+
+eis10_comp |> tt()
+```
+
+Differences in the treatment effects on viewing time (seconds) between 10 and 0:
+
+```{r}
+eis10_comp_diffs <- comparisons(hu10, 
+                                dpar = "mu",
+                                variables = list(exp_condition = "pairwise"), 
+                                comparison = function(hi, lo) exp(hi) - exp(lo),
+                                newdata = datagrid(parental_ideology_z = to_pi_z(c(0, 10))),
+                                hypothesis = difference ~ pairwise | contrast) |> 
+  as_tibble() |> 
+  mutate(contrast = str_replace(contrast, ", ", " - ")) |> 
+  select(Contrast = contrast,
+         `Difference (10 vs. 0)` = estimate,
+         "95% HDI Lower" = conf.low,
+         "95% HDI Upper" = conf.high
+         ) |> 
+  mutate(across(where(is.numeric), \(x) round(x, 4)))
+
+eis10_comp_diffs |> tt()
+```

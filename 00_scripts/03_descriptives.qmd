@@ -20,21 +20,23 @@ embed-resources: true
 # Execution options 
 execute:
   warning: false
+
+# Figures in the HTML are drawn with ragg, which shows the falo fonts
+knitr:
+  opts_chunk:
+    dev: "ragg_png"
+    dpi: 300
+    fig.retina: 1
+    fig.width: 6
+    fig.height: 3.7
+    fig.align: "center"
+    out.width: "90%"
 ---
 
 ```{r}
 #| include: false
 # set error messages to English
 Sys.setenv(LANG = "en")
-
-knitr::opts_chunk$set(
-  fig.align = "center", 
-  fig.retina = 3,
-  fig.width = 6, 
-  fig.height = (6 * 0.618),
-  out.width = "90%", 
-  collapse = FALSE
-)
 
 options(
   digits = 4,
@@ -55,15 +57,10 @@ library("groundhog")
 pkgs <- c("here",         # System path management
           "tidyverse",    # ggplot, dplyr, and friends
           "tinytable",    # Minimalist tables
-          "rstatix",      # Basic tidy statistical tests 
           "modelsummary", # Data and model summaries with tables and plots
-          "marginaleffects", # Model-based predictions, comparisons, and more marginalia
-          "ggdist",       # Additional plot elements
           "ggrain",       # For fancy raincloud plots
           "GGally",       # ggpairs and other ggplot2 friends
-          "ggsignif",     # Add significance to figures
-          "patchwork",    # Combine multiple ggplots
-          "showtext"      # Additional fonts for plots etc
+          "ggsignif"      # Add significance to figures
           )
 
 groundhog.library(pkgs, "2026-01-01")
@@ -71,56 +68,13 @@ groundhog.library(pkgs, "2026-01-01")
 
 ```{r}
 #| include: false
-
-showtext_auto()
-# showtext_opts(dpi = 600)
-
-font_add_google("Public Sans", "Public Sans")
-font_add_google("Public Sans", "Public Sans Light", regular.wt = 300)
-font_add_google("Public Sans", "Public Sans Semibold", regular.wt = 600)
-
-# Custom ggplot theme
-theme_nice <- function() {
-  # General text family and base size
-  theme_minimal(base_family = "Public Sans", base_size = 14) +
-    theme(
-      # Remove minor grid lines for cleaner look
-      panel.grid.minor = element_blank(),
-      # Customize major grid lines color
-      panel.grid.major = element_blank(),
-      # Plot title: bold and custom relative size
-      plot.title = element_text(family = "Public Sans", face = "bold", size = rel(1.1), margin = margin(b = 10)),
-      # Subtitle and caption: lighter weight 
-      plot.subtitle = element_text(family = "Public Sans Light", face = "plain"),
-      plot.caption = element_text(family = "Public Sans Light", face = "plain"),
-      # Axis text: Relative size
-      axis.text = element_text(size = rel(0.9)),
-      # Axis titles: Semibold and custom relative size
-      axis.title = element_text(family = "Public Sans Semibold", size = rel(0.9)),
-      axis.title.x = element_text(hjust = 0.5),
-      axis.title.y = element_text(hjust = 0.5),
-      # Axis lines
-      axis.line = element_line(color = "grey25", linewidth = 0.8),
-      # Facet labels: bold text on grey background
-      strip.text = element_text(
-        family = "Public Sans Semibold", face = "plain",
-        size = rel(1),
-        hjust = 0.5
-      ),
-      strip.background = element_rect(fill = "grey95", color = "grey25", linewidth = 0.8), 
-      # Legend styling: compact and top-positioned
-      legend.title = element_text(family = "Public Sans Semibold", size = rel(0.8)),
-      legend.text = element_text(size = rel(0.8)),
-      legend.position = "top",
-      legend.justification = "center",
-      legend.title.position = "left",
-      legend.margin = margin(l = 0, t = 0)
-    )
+# Figures use the falo theme and fonts: https://github.com/olafborghi/FinallyAmazingLookingOutput
+if (!require("falo", quietly = TRUE)) {
+  if (!require("pak", quietly = TRUE)) install.packages("pak")
+  pak::pak("olafborghi/FinallyAmazingLookingOutput")
 }
-
-theme_set(theme_nice())
-update_geom_defaults("text", list(family = "Public Sans"))
-update_geom_defaults("label", list(family = "Public Sans"))
+library("falo")
+theme_set(theme_allround())
 ```
 
 ```{r}
@@ -157,6 +111,22 @@ df |>
   tt()
 ```
 
+```{r}
+#| fig-width: 6
+#| fig-height: 3.5
+df |>
+  count(field_date = ymd(date), name = "n") |>
+  # Days without completes show as zero rather than being bridged by the line
+  tidyr::complete(field_date = full_seq(field_date, 1), fill = list(n = 0)) |>
+  ggplot(aes(x = field_date, y = n)) +
+  geom_col(fill = "#96AC78", alpha = 0.4) +
+  geom_line(color = "#96AC78", linewidth = 1) +
+  scale_x_date(date_breaks = "4 weeks", date_labels = "%d %b") +
+  labs(x = "Date", y = "Completes") 
+
+ggsave(here(figure_dir, "completion_distribution.svg"), height = 3.5, width = 6, web_fonts = falo_svg_fonts())
+```
+
 #### Duration
 
 ```{r}
@@ -168,7 +138,7 @@ df |>
   datasummary_skim()
 ```
 
-#### Attention 
+#### Attention
 
 Final post-treatment attention check.
 
@@ -194,6 +164,7 @@ descriptive_table <- df |>
     `Migration Background` = migration_background,
     `Living Standard` = living_standard,
   ) |> 
+  mutate(Gender = fct_recode(Gender, Men = "male", Women = "female", Other = "other")) |> 
   datasummary_skim(type = "categorical") |> 
   style_tt(j = 1, align = "l") |> 
   style_tt(j = 2:3, align = "c")
@@ -216,6 +187,8 @@ descriptive_exp_table <- df |>
     `Migration Background` = migration_background,
     `Living Standard` = living_standard,
   ) |> 
+  mutate(Condition = fct_recode(Condition, Control = "control", Hope = "hope", Anxiety = "anxiety"),
+         Gender = fct_recode(Gender, Men = "male", Women = "female", Other = "other")) |> 
   droplevels() |> 
   datasummary_balance(~Condition, data = _) |> 
   style_tt(j = 1, align = "l") |> 
@@ -245,8 +218,6 @@ age_table
 ```{r}
 #| fig-height: 4
 #| fig-width: 6
-#| fig-dpi: 600
-#| fig-showtext: true
 df |>
   count(age) |>
   mutate(percent = n / sum(n) * 100) |>
@@ -259,12 +230,9 @@ df |>
   scale_x_continuous(breaks = 16:26) +
   scale_y_continuous(breaks = seq(0, 400, by = 100), limits = c(0, 400)) +
   labs(x = "Age", y = NULL, title = "Age Distribution") +
-  theme_nice() 
+  theme_allround() 
 
-ggsave(here(figure_dir, "age_distribution.svg"),
-       height = 4,
-       width = 6,
-       dpi = 600)
+ggsave(here(figure_dir, "age_distribution.svg"), height = 4, width = 6, web_fonts = falo_svg_fonts())
 ```
 
 #### Correlations between key variables
@@ -287,7 +255,6 @@ scatter_function_grouped <- function(data, mapping, ...) {
 #| message: false
 #| fig-height: 12
 #| fig-width: 16
-#| fig-showtext: TRUE
 df |> 
   mutate(age_group = as.character(age_group)) |> 
   mutate(age_group = case_match(age_group,
@@ -320,15 +287,12 @@ df |>
                                 "22-26" = "#d95f02")) +
   scale_fill_manual(values = c("16-21" = "#1b9e77",
                                 "22-26" = "#d95f02")) +
-  theme_nice() +
+  theme_allround() +
   theme(legend.text = element_text(size = 16),
         legend.title = element_text(size = 16)) + 
-  labs(color = "age_group", fill = "age_group")
+  labs(color = "Age group", fill = "Age group")
 
-ggsave(here(figure_dir, "pre_var_correlogram.svg"),
-       height = 12,
-       width = 16,
-       dpi = 600)
+ggsave(here(figure_dir, "pre_var_correlogram.svg"), height = 12, width = 16, web_fonts = falo_svg_fonts())
 ```
 
 ## Experiment Checks
@@ -397,7 +361,7 @@ dem_exp_fig <- df |>
     map_signif_level = TRUE,
     size = 0.8,
     textsize = 4,
-    family = "Public Sans",
+    family = "Public Sans Regular",
     color = "black",
     tip_length = 0,
     step_increase = 0.12,
@@ -411,7 +375,7 @@ dem_exp_fig <- df |>
     y = "Democratic Support",
     title = "Democratic Support by Experimental Condition"
   ) +
-  theme_nice() +
+  theme_allround() +
   theme(legend.position = "none") 
 
 dem_exp_fig
@@ -441,7 +405,7 @@ polpart_exp_fig <- df |>
     map_signif_level = TRUE,
     size = 0.8,
     textsize = 4,
-    family = "Public Sans",
+    family = "Public Sans Regular",
     color = "black",
     tip_length = 0,
     step_increase = 0.12,
@@ -455,13 +419,8 @@ polpart_exp_fig <- df |>
     y = "Political Participation",
     title = "Political Participation by Experimental Condition"
   ) +
-  theme_nice() +
+  theme_allround() +
   theme(legend.position = "none") 
 
 polpart_exp_fig 
 ```
-
-
-
-
-

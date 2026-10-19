@@ -20,21 +20,23 @@ embed-resources: true
 # Execution options 
 execute:
   warning: false
+
+# Figures in the HTML are drawn with ragg, which shows the falo fonts
+knitr:
+  opts_chunk:
+    dev: "ragg_png"
+    dpi: 300
+    fig.retina: 1
+    fig.width: 6
+    fig.height: 3.7
+    fig.align: "center"
+    out.width: "90%"
 ---
 
 ```{r}
 #| include: false
 # set error messages to English
 Sys.setenv(LANG = "en")
-
-knitr::opts_chunk$set(
-  fig.align = "center", 
-  fig.retina = 3,
-  fig.width = 6, 
-  fig.height = (6 * 0.618),
-  out.width = "90%", 
-  collapse = FALSE
-)
 
 options(
   digits = 4,
@@ -58,16 +60,12 @@ pkgs <- c("here",         # System path management
           "modelsummary", # Data and model summaries with tables and plots
           "marginaleffects", # Model-based predictions, comparisons, and more marginalia
           "ellmer",       # Interact with LLM APIs in R
-          "tidyprompt",   # Nice way to prompt LLMs 
-          "stringr",      # Additional string operations
+          "tidyprompt",   # Nice way to prompt LLMs
           "tidytext",     # Text Mining using 'dplyr', 'ggplot2', and Other Tidy Tools
           "ggwordcloud",  # Wordclouds in ggplot2
-          "ggdist",       # Additional plot elements
           "ggrain",       # For fancy raincloud plots
           "GGally",       # ggpairs and other ggplot2 friends
-          "ggsignif",     # Add significance to figures
-          "patchwork",    # Combine multiple ggplots
-          "showtext"      # Additional fonts for plots etc
+          "ggsignif"      # Add significance to figures
           )
 
 groundhog.library(pkgs, "2026-01-01")
@@ -75,57 +73,13 @@ groundhog.library(pkgs, "2026-01-01")
 
 ```{r}
 #| include: false
-
-showtext_auto()
-showtext_opts(dpi = 600)
-
-font_add_google("Public Sans", "Public Sans")
-font_add_google("Public Sans", "Public Sans Light", regular.wt = 300)
-font_add_google("Public Sans", "Public Sans Semibold", regular.wt = 600)
-
-# Custom ggplot theme
-theme_nice <- function() {
-  # General text family and base size
-  theme_minimal(base_family = "Public Sans", base_size = 14) +
-    theme(
-      # Remove minor grid lines for cleaner look
-      panel.grid.minor = element_blank(),
-      # Customize major grid lines color
-      panel.grid.major = element_blank(),
-      # Plot title: bold and custom relative size
-      plot.title = element_text(family = "Public Sans", face = "bold", size = rel(1.1), margin = margin(b = 10)),
-      # Subtitle and caption: lighter weight 
-      plot.subtitle = element_text(family = "Public Sans Light", face = "plain"),
-      plot.caption = element_text(family = "Public Sans Light", face = "plain"),
-      # Axis text: Relative size
-      axis.text = element_text(size = rel(0.9)),
-      # Axis titles: Semibold and custom relative size
-      axis.title = element_text(family = "Public Sans Semibold", size = rel(0.9)),
-      axis.title.x = element_text(hjust = 0.5),
-      axis.title.y = element_text(hjust = 0.5),
-      # Axis lines
-      axis.line = element_line(color = "grey25", linewidth = 0.8),
-      # Facet labels: bold text on grey background
-      strip.text = element_text(
-        family = "Public Sans Semibold", face = "plain",
-        size = rel(1),
-        hjust = 0.5
-      ),
-      strip.background = element_rect(fill = "grey95", color = "grey25", linewidth = 0.8), 
-      # Legend styling: compact and top-positioned
-      legend.title = element_text(family = "Public Sans Semibold", size = rel(0.8)),
-      legend.text = element_text(size = rel(0.8)),
-      legend.position = "top",
-      legend.justification = "center",
-      legend.title.position = "left",
-      legend.margin = margin(l = 0, t = 0)
-    )
+# Figures use the falo theme and fonts: https://github.com/olafborghi/FinallyAmazingLookingOutput
+if (!require("falo", quietly = TRUE)) {
+  if (!require("pak", quietly = TRUE)) install.packages("pak")
+  pak::pak("olafborghi/FinallyAmazingLookingOutput")
 }
-
-
-theme_set(theme_nice())
-update_geom_defaults("text", list(family = "Public Sans"))
-update_geom_defaults("label", list(family = "Public Sans"))
+library("falo")
+theme_set(theme_allround())
 ```
 
 ```{r}
@@ -212,14 +166,13 @@ comments_text |>
 ```{r}
 #| fig-height: 4
 #| fig-width: 11
-#| fig-dpi: 600
-#| fig-showtext: TRUE
 
 comments_text |>  
   ggplot(aes(label = word, size = n, color = n)) +
   geom_text_wordcloud_area(
     rm_outside = TRUE,
-    eccentricity = 0.65
+    eccentricity = 0.65,
+    seed = 42
   ) +
   scale_size_area(max_size = 20) +
   scale_color_gradientn(colours = c("#313695", "#4575b4", "#74add1", "#a50026", "#d73027", "#f46d43")) +
@@ -233,19 +186,12 @@ comments_text |>
     strip.text = element_text(size = 18)
   )
 
-ggsave(here(figure_dir, "comments_wordcloud.svg"),
-       height = 4,
-       width = 11,
-       dpi = 600)
+ggsave(here(figure_dir, "comments_wordcloud.svg"), height = 4, width = 11, web_fonts = falo_svg_fonts())
 ```
 
 ## Sentiment Analysis
 
 ### Interact with LLM
-
-::: {.callout-important}
-## Don't forget to remove own API code before sharing the code. 
-:::
 
 ```{r}
 Sys.setenv(ANTHROPIC_API_KEY = "PASTE YOUR API CODE")
@@ -387,9 +333,6 @@ scatter_function <- function(data, mapping, ...) {
 #| message: false
 #| fig-height: 8.5
 #| fig-width: 12
-#| fig-dpi: 600
-#| fig-showtext: TRUE
-showtext_opts(dpi = 600)
 df_wide |> 
   mutate(anxiety_hope_dim = anxiety_hope_dim*100) |> 
   select(Sentiment = exp_comment_sentiment,
@@ -404,22 +347,18 @@ df_wide |>
     # Lower Triangle: Scatterplot
     lower = list(continuous = scatter_function),
     # Upper Triangle: Correlations 
-    upper = list(continuous = wrap("cor", stars = TRUE, size = 5, color = "black", family = "Public Sans")),
+    upper = list(continuous = wrap("cor", stars = TRUE, size = 5, color = "black", family = "Public Sans Regular")),
     # Diagonal: Density 
     diag = list(continuous = wrap("densityDiag", fill = "#c994c7", color = "black"))
   ) +
-  theme_nice() 
+  theme_allround() 
 
-ggsave(here(figure_dir, "sent_manip_corrs.png"),
-       height = 8.5,
-       width = 12,
-       dpi = 600)
+ggsave(here(figure_dir, "sent_manip_corrs.svg"), height = 8.5, width = 12, web_fonts = falo_svg_fonts())
 ```
 
 ```{r}
 #| fig-height: 4
 #| fig-width: 6
-#| fig-showtext: TRUE
 df_wide |> 
   filter(!is.na(exp_comment_sentiment)) |> 
   mutate(exp_condition = factor(exp_condition, levels = c("anxiety", "hope", "control"))) |> 
@@ -445,7 +384,7 @@ df_wide |>
     map_signif_level = TRUE,
     size = 0.8,
     textsize = 4,
-    family = "Public Sans",
+    family = "Public Sans Regular",
     color = "black",
     tip_length = 0,
     step_increase = 0.12,
@@ -459,13 +398,10 @@ df_wide |>
     y = "Sentiment",
     title = "Sentiment by Experimental Condition"
   ) +
-  theme_nice() +
+  theme_allround() +
   theme(legend.position = "none") 
 
-ggsave(here(figure_dir, "sent_raincloud.svg"),
-       height = 4,
-       width = 6,
-       dpi = 600)
+ggsave(here(figure_dir, "sent_raincloud.svg"), height = 4, width = 6, web_fonts = falo_svg_fonts())
 ```
 
 ```{r}
@@ -612,8 +548,6 @@ emotion_crosstab |>
 ```{r}
 #| fig-height: 5
 #| fig-width: 8
-#| fig-dpi: 600
-#| fig-showtext: TRUE
 # Define emotion colors 
 emotion_colors <- c(
   "angry" = "#e07a7a",      
@@ -653,7 +587,7 @@ emotion_plot_data |> ggplot(
     labels = c("Angry", "Anxious", "Hopeful", "Happy", "Calm")
   ) +
   scale_x_discrete(
-    labels = c("Control", "Anxiety", "Hope")
+    labels = c(control = "Control", hope = "Hope", anxiety = "Anxiety")
   ) +
   scale_y_continuous(
     labels = scales::percent_format(scale = 1),
@@ -668,10 +602,7 @@ emotion_plot_data |> ggplot(
         axis.text.y = element_blank()) +
   guides(fill = guide_legend(reverse=T))
 
-ggsave(here(figure_dir, "discrete_emotion_dist.svg"),
-       height = 5,
-       width = 8,
-       dpi = 600)
+ggsave(here(figure_dir, "discrete_emotion_dist.svg"), height = 5, width = 8, web_fonts = falo_svg_fonts())
 ```
 
 ## Save the Data with Sentiment & Emotion Codings
@@ -704,10 +635,3 @@ df_long <- df_long |>
 save(df_long, file = here(data_analysis_dir, "df_long.RData"))
 write_csv(df_long, file = here(data_analysis_dir, "df_long.csv"))
 ```
-
-
-
-
-
-
-
